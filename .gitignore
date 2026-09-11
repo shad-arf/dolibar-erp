@@ -1,0 +1,32 @@
+# Dolibarr instance configuration (contains credentials and server paths)
+/conf/conf.php
+
+# Dolibarr generated documents and uploaded attachments
+/documents/
+
+# Runtime logs
+*.log
+error_log
+
+# Local environment and secret files
+.env
+.env.*
+!.env.example
+
+# Runtime and temporary files
+*.cache
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Local development tools
+/.agents/
+/.codex/
+/.idea/
+/.vscode/
+
+# OS metadata
+.DS_Store
+Thumbs.db

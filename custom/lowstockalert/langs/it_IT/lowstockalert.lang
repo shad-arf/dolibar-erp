@@ -1,0 +1,56 @@
+# Copyright (C) 2021 SuperAdmin <marcello.gribaudo@opigi.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+#
+# Generic
+#
+
+# Module label 'ModuleLowStockAlertName'
+ModuleLowStockAlertName = Messaggi su sottoscorta
+# Module description 'ModuleLowStockAlertDesc'
+ModuleLowStockAlertDesc = Permette di emettere messaggi e mail in caso di sottoscorta
+
+#
+# Admin page
+#
+LowStockAlertSetup = Impostazioni di Messaggi su sottoscorta
+Settings = Impostazioni
+LowStockAlertSetupPage = Pagina di Setuo di Messaggi su sottoscorta
+LOWSTOCKALERT_EMAILOBJECT = Oggetto
+LOWSTOCKALERT_EMAILOBJECTTooltip = Oggetto della mail di avviso
+LOWSTOCKALERT_EMAILFROM = Da
+LOWSTOCKALERT_EMAILFROMTooltip = Indirizzo email da (in caso di più indirizzi separare con ;)
+LOWSTOCKALERT_EMAILTO = A
+LOWSTOCKALERT_EMAILTOTooltip = Indirizzo email a (in caso di più indirizzi separare con ;)
+LOWSTOCKALERT_EMAILMESSAGE = Messaggio mail di avviso
+LOWSTOCKALERT_EMAILMESSAGETooltip = Messaggio della mail (spono previsiti i seguenti segnaposto):<UL><LI>[ref]=Rif articolo</LI><LI>[label]=Titolo articolo</LI><LI>[stock]=Giacenza sottoscorta</LI><LI>[warehouse]=Magazzino sottoscorta</LI></UL>
+LOWSTOCKALERT_ALERT = Messaggio di allerta a video
+LOWSTOCKALERT_ALERTTooltip = Abilita la comparsa del messaggio di allerta al momento del sottoscorta
+
+
+#
+# About page
+#
+About = Su 
+LowStockAlertAbout = Su Messaggi su sottoscorta
+LowStockAlertAboutPage = Pagina Su Messaggi su sottoscorta
+
+#
+# Other
+#
+LowStock = 'Il prodotto %s (%s) con giacenza %s è sottoscorta nel magazzino %s
+AlertWhenLow=Allarme se sottoscorta
+
+

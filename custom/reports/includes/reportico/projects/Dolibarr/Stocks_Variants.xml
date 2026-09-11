@@ -1,0 +1,110 @@
+<?xml version="1.0"?><Report><ReportQuery><Format><ReportTitle>VariantsStock</ReportTitle><ReportDescription></ReportDescription><PageSize>A4</PageSize><PageOrientation>Portrait</PageOrientation><TopMargin></TopMargin><BottomMargin></BottomMargin><RightMargin></RightMargin><LeftMargin></LeftMargin><pdfFont></pdfFont><pdfFontSize></pdfFontSize><PreExecuteCode>if($this-&gt;target_format != 'PDF'){
+                $checks = $_criteria[&quot;Hidecolumns&quot;]-&gt;get_criteria_value(&quot;VALUE&quot;,false);
+
+                for ($ct = 0; $ct &lt; count($this-&gt;columns); $ct++)
+                {
+                $col = $this-&gt;columns[$ct];
+                if ( $col-&gt;query_name == &quot;ref&quot; &amp;&amp; preg_match(&quot;/[1]/&quot;, $checks) )
+                {
+                $col-&gt;attributes[&quot;column_display&quot;] = &quot;hide&quot;;
+                }
+                if ( $col-&gt;query_name == &quot;descripcion&quot; &amp;&amp; preg_match(&quot;/[2]/&quot;, $checks) )
+                {
+                $col-&gt;attributes[&quot;column_display&quot;] = &quot;hide&quot;;
+                }
+                if ( $col-&gt;query_name == &quot;almacen&quot; &amp;&amp; preg_match(&quot;/[3]/&quot;, $checks) )
+                {
+                $col-&gt;attributes[&quot;column_display&quot;] = &quot;hide&quot;;
+                }
+                if ( $col-&gt;query_name == &quot;stock&quot; &amp;&amp; preg_match(&quot;/[4]/&quot;, $checks) )
+                {
+                $col-&gt;attributes[&quot;column_display&quot;] = &quot;hide&quot;;
+                }
+                }
+                }
+            </PreExecuteCode><formBetweenRows>solidline</formBetweenRows><gridDisplay>show</gridDisplay><gridSortable>yes</gridSortable><gridSearchable>yes</gridSearchable><gridPageable>.DEFAULT</gridPageable><gridPageSize>.DEFAULT</gridPageSize></Format><Datasource><SourceType>database</SourceType><SourceConnection><DatabaseType>mysql</DatabaseType><DatabaseName></DatabaseName><HostName></HostName><ServiceName></ServiceName><UserName></UserName><Password></Password></SourceConnection></Datasource><EntryForm><Query><TableSql></TableSql><WhereSql></WhereSql><GroupSql></GroupSql><RowSelection>all</RowSelection><SQL><QuerySql></QuerySql><SQLRaw>SELECT p.ref ref, p.label descripcion_producto, CASE
+			WHEN e.ref IS NULL
+				THEN coalesce((SELECT ref FROM llx_entrepot WHERE rowid = (SELECT distinct fk_entrepot FROM llx_product_stock WHERE fk_product = (SELECT fk_product_parent FROM llx_product_attribute_combination WHERE fk_product_child = p.rowid))), 'Almacén')
+				ELSE coalesce(e.ref, 'Almacén')
+			END as almacen, CASE
+            
+			WHEN p.rowid IN (SELECT fk_product_parent FROM llx_product_attribute_combination)
+				THEN COALESCE((SELECT SUM(reel)
+						FROM llx_product_stock w, llx_product_attribute_combination pc 
+						WHERE w.fk_product = pc.fk_product_child AND p.rowid = pc.fk_product_parent), 0)
+				ELSE COALESCE(w.reel, 0)
+            END as stock, CASE
+            WHEN e.rowid IS NULL
+				THEN coalesce((SELECT distinct fk_entrepot FROM llx_product_stock WHERE fk_product = (SELECT fk_product_parent FROM llx_product_attribute_combination WHERE fk_product_child = p.rowid)), 1)
+				ELSE coalesce(e.rowid, 1)
+			END AS rowid, p.rowid prodid, CASE
+            
+			WHEN p.rowid IN (SELECT fk_product_child FROM llx_product_attribute_combination)
+				THEN (SELECT fk_product_parent FROM llx_product_attribute_combination WHERE fk_product_child = p.rowid)
+				ELSE p.rowid
+            END as id_padre, CASE
+            
+			WHEN p.rowid IN (SELECT fk_product_child FROM llx_product_attribute_combination)
+				THEN (SELECT ref FROM llx_product WHERE rowid = id_padre)
+				ELSE p.ref
+            END as ref_padre, CASE
+            
+			WHEN p.rowid IN (SELECT fk_product_child FROM llx_product_attribute_combination)
+				THEN (SELECT label FROM llx_product WHERE rowid = id_padre)
+				ELSE p.label
+            END as descripcion_padre, COALESCE((SELECT SUM(reel)
+						FROM llx_product_stock
+						WHERE fk_product IN (SELECT distinct fk_product_child 
+												FROM llx_product_attribute_combination 
+                                                WHERE fk_product_parent = id_padre)), 0)
+            as stock_padre
+			FROM llx_product p
+			LEFT JOIN llx_product_stock w 
+				INNER JOIN llx_entrepot e
+                ON w.fk_entrepot = e.rowid
+            ON w.fk_product = p.rowid
+			WHERE 1 = 1 AND stock &gt;= 0 AND (p.rowid IN (SELECT fk_product_child FROM llx_product_attribute_combination))
+            GROUP BY descripcion_padre, id_padre, p.ref, p.rowid, p.label, e.ref, p.stock, e.rowid, w.reel
+			ORDER BY id_padre ASC;</SQLRaw></SQL><QueryColumns><QueryColumn><Name>ref</Name><TableName>p</TableName><ColumnName>ref</ColumnName><ColumnType>char</ColumnType><ColumnLength>30</ColumnLength><Format><column_display>show</column_display><content_type>plain</content_type><ColumnStartPDF></ColumnStartPDF><justify>left</justify><ColumnWidthPDF>4cm</ColumnWidthPDF><ColumnWidthHTML></ColumnWidthHTML><column_title>Ref.</column_title><tooltip></tooltip><group_header_label>0</group_header_label><group_header_label_xpos></group_header_label_xpos><group_header_data_xpos></group_header_data_xpos><group_trailer_label>0</group_trailer_label></Format></QueryColumn><QueryColumn><Name>descripcion_producto</Name><TableName>p</TableName><ColumnName>label</ColumnName><ColumnType>char</ColumnType><ColumnLength>30</ColumnLength><Format><column_display>show</column_display><content_type>plain</content_type><ColumnStartPDF></ColumnStartPDF><justify>left</justify><ColumnWidthPDF></ColumnWidthPDF><ColumnWidthHTML></ColumnWidthHTML><column_title></column_title><tooltip></tooltip><group_header_label>0</group_header_label><group_header_label_xpos></group_header_label_xpos><group_header_data_xpos></group_header_data_xpos><group_trailer_label>0</group_trailer_label></Format></QueryColumn><QueryColumn><Name>almacen</Name><TableName></TableName><ColumnName>CASE
+			WHEN e.ref IS NULL
+				THEN coalesce((SELECT ref FROM llx_entrepot WHERE rowid = (SELECT distinct fk_entrepot FROM llx_product_stock WHERE fk_product = (SELECT fk_product_parent FROM llx_product_attribute_combination WHERE fk_product_child = p.rowid))), 'Almacén')
+				ELSE coalesce(e.ref, 'Almacén')
+			END as</ColumnName><ColumnType>char</ColumnType><ColumnLength>30</ColumnLength><Format><column_display>show</column_display><content_type>plain</content_type><ColumnStartPDF></ColumnStartPDF><justify>left</justify><ColumnWidthPDF></ColumnWidthPDF><ColumnWidthHTML></ColumnWidthHTML><column_title></column_title><tooltip></tooltip><group_header_label>0</group_header_label><group_header_label_xpos></group_header_label_xpos><group_header_data_xpos></group_header_data_xpos><group_trailer_label>0</group_trailer_label></Format></QueryColumn><QueryColumn><Name>stock</Name><TableName></TableName><ColumnName>CASE
+            
+			WHEN p.rowid IN (SELECT fk_product_parent FROM llx_product_attribute_combination)
+				THEN COALESCE((SELECT SUM(reel)
+						FROM llx_product_stock w, llx_product_attribute_combination pc 
+						WHERE w.fk_product = pc.fk_product_child AND p.rowid = pc.fk_product_parent), 0)
+				ELSE COALESCE(w.reel, 0)
+            END as</ColumnName><ColumnType>char</ColumnType><ColumnLength>30</ColumnLength><Format><column_display>show</column_display><content_type>plain</content_type><ColumnStartPDF></ColumnStartPDF><justify>left</justify><ColumnWidthPDF></ColumnWidthPDF><ColumnWidthHTML></ColumnWidthHTML><column_title></column_title><tooltip></tooltip><group_header_label>0</group_header_label><group_header_label_xpos></group_header_label_xpos><group_header_data_xpos></group_header_data_xpos><group_trailer_label>0</group_trailer_label></Format></QueryColumn><QueryColumn><Name>rowid</Name><TableName></TableName><ColumnName>CASE
+            WHEN e.rowid IS NULL
+				THEN coalesce((SELECT distinct fk_entrepot FROM llx_product_stock WHERE fk_product = (SELECT fk_product_parent FROM llx_product_attribute_combination WHERE fk_product_child = p.rowid)), 1)
+				ELSE coalesce(e.rowid, 1)
+			END AS</ColumnName><ColumnType>char</ColumnType><ColumnLength>30</ColumnLength><Format><column_display>hide</column_display><content_type>plain</content_type><ColumnStartPDF></ColumnStartPDF><justify>left</justify><ColumnWidthPDF></ColumnWidthPDF><ColumnWidthHTML></ColumnWidthHTML><column_title></column_title><tooltip></tooltip><group_header_label>0</group_header_label><group_header_label_xpos></group_header_label_xpos><group_header_data_xpos></group_header_data_xpos><group_trailer_label>0</group_trailer_label></Format></QueryColumn><QueryColumn><Name>prodid</Name><TableName>p</TableName><ColumnName>rowid</ColumnName><ColumnType>char</ColumnType><ColumnLength>30</ColumnLength><Format><column_display>hide</column_display><content_type>plain</content_type><ColumnStartPDF></ColumnStartPDF><justify>left</justify><ColumnWidthPDF></ColumnWidthPDF><ColumnWidthHTML></ColumnWidthHTML><column_title></column_title><tooltip></tooltip><group_header_label>0</group_header_label><group_header_label_xpos></group_header_label_xpos><group_header_data_xpos></group_header_data_xpos><group_trailer_label>0</group_trailer_label></Format></QueryColumn><QueryColumn><Name>id_padre</Name><TableName></TableName><ColumnName>CASE
+            
+			WHEN p.rowid IN (SELECT fk_product_child FROM llx_product_attribute_combination)
+				THEN (SELECT fk_product_parent FROM llx_product_attribute_combination WHERE fk_product_child = p.rowid)
+				ELSE p.rowid
+            END as</ColumnName><ColumnType>char</ColumnType><ColumnLength>30</ColumnLength><Format><column_display>hide</column_display><content_type>plain</content_type><ColumnStartPDF></ColumnStartPDF><justify>left</justify><ColumnWidthPDF></ColumnWidthPDF><ColumnWidthHTML></ColumnWidthHTML><column_title></column_title><tooltip></tooltip><group_header_label>0</group_header_label><group_header_label_xpos></group_header_label_xpos><group_header_data_xpos></group_header_data_xpos><group_trailer_label>0</group_trailer_label></Format></QueryColumn><QueryColumn><Name>ref_padre</Name><TableName></TableName><ColumnName>CASE
+            
+			WHEN p.rowid IN (SELECT fk_product_child FROM llx_product_attribute_combination)
+				THEN (SELECT ref FROM llx_product WHERE rowid = id_padre)
+				ELSE p.ref
+            END as</ColumnName><ColumnType>char</ColumnType><ColumnLength>30</ColumnLength><Format><column_display>hide</column_display><content_type>plain</content_type><ColumnStartPDF></ColumnStartPDF><justify>left</justify><ColumnWidthPDF></ColumnWidthPDF><ColumnWidthHTML></ColumnWidthHTML><column_title></column_title><tooltip></tooltip><group_header_label>0</group_header_label><group_header_label_xpos></group_header_label_xpos><group_header_data_xpos></group_header_data_xpos><group_trailer_label>0</group_trailer_label></Format></QueryColumn><QueryColumn><Name>descripcion_padre</Name><TableName></TableName><ColumnName>CASE
+            
+			WHEN p.rowid IN (SELECT fk_product_child FROM llx_product_attribute_combination)
+				THEN (SELECT label FROM llx_product WHERE rowid = id_padre)
+				ELSE p.label
+            END as</ColumnName><ColumnType>char</ColumnType><ColumnLength>30</ColumnLength><Format><column_display>hide</column_display><content_type>plain</content_type><ColumnStartPDF></ColumnStartPDF><justify>left</justify><ColumnWidthPDF></ColumnWidthPDF><ColumnWidthHTML></ColumnWidthHTML><column_title></column_title><tooltip></tooltip><group_header_label>0</group_header_label><group_header_label_xpos></group_header_label_xpos><group_header_data_xpos></group_header_data_xpos><group_trailer_label>0</group_trailer_label></Format></QueryColumn><QueryColumn><Name>stock_padre</Name><TableName></TableName><ColumnName>COALESCE((SELECT SUM(reel)
+						FROM llx_product_stock
+						WHERE fk_product IN (SELECT distinct fk_product_child 
+												FROM llx_product_attribute_combination 
+                                                WHERE fk_product_parent = id_padre)), 0)
+            as</ColumnName><ColumnType>char</ColumnType><ColumnLength>30</ColumnLength><Format><column_display>hide</column_display><content_type>plain</content_type><ColumnStartPDF></ColumnStartPDF><justify>left</justify><ColumnWidthPDF></ColumnWidthPDF><ColumnWidthHTML></ColumnWidthHTML><column_title></column_title><tooltip></tooltip><group_header_label>0</group_header_label><group_header_label_xpos></group_header_label_xpos><group_header_data_xpos></group_header_data_xpos><group_trailer_label>0</group_trailer_label></Format></QueryColumn><QueryColumn><Name>stocktotal</Name><TableName></TableName><ColumnName></ColumnName><ColumnType></ColumnType><ColumnLength></ColumnLength><Format><column_display>hide</column_display><content_type>plain</content_type><ColumnStartPDF></ColumnStartPDF><justify>right</justify><ColumnWidthPDF></ColumnWidthPDF><ColumnWidthHTML></ColumnWidthHTML><column_title></column_title><tooltip></tooltip><group_header_label>0</group_header_label><group_header_label_xpos></group_header_label_xpos><group_header_data_xpos></group_header_data_xpos><group_trailer_label>0</group_trailer_label></Format></QueryColumn></QueryColumns><OrderColumns></OrderColumns><PreSQLS></PreSQLS></Query><Assignments><Assignment><AssignName>stocktotal</AssignName><AssignNameNew></AssignNameNew><Expression>sum({stock},{id_padre})</Expression><Condition></Condition></Assignment><Assignment><AssignName>ref</AssignName><AssignNameNew></AssignNameNew><Expression>apply_style('PAGE', 'border-style', 'solid');apply_style('PAGE', 'border-width', '1 1 1
+                        1');apply_style('PAGE', 'border-color', '#222222');apply_style('PAGE', 'background-color',
+                        '#f3fff3');
+                    </Expression><Condition></Condition></Assignment><Assignment><AssignName>ref</AssignName><AssignNameNew></AssignNameNew><Expression>apply_style('ROW', 'background-color', '#e0e0ff');</Expression><Condition></Condition></Assignment><Assignment><AssignName>ref</AssignName><AssignNameNew></AssignNameNew><Expression>embed_hyperlink({ref}, 'product/card.php?id='.{prodid}.'')</Expression><Condition></Condition></Assignment></Assignments><Criteria><CriteriaItem><Name>Almacen</Name><Title>Warehouse</Title><QueryTableName></QueryTableName><QueryColumnName>e.rowid</QueryColumnName><CriteriaType>LOOKUP</CriteriaType><CriteriaDisplay>CHECKBOX</CriteriaDisplay><ExpandDisplay>NOINPUT</ExpandDisplay><ReturnColumn>rowid</ReturnColumn><DisplayColumn>lieu</DisplayColumn><OverviewColumn>lieu</OverviewColumn><MatchColumn>lieu</MatchColumn><CriteriaDefaults></CriteriaDefaults><CriteriaList></CriteriaList><Query><TableSql></TableSql><WhereSql></WhereSql><GroupSql></GroupSql><RowSelection></RowSelection><SQLRaw>SELECT ref lieu, rowid rowid
+                            FROM llx_entrepot
+                            WHERE 1 = 1 AND entity=1
+                            ORDER BY lieu
+                        </SQLRaw><SQL><QuerySql></QuerySql></SQL><QueryColumns><QueryColumn><Name>lieu</Name><TableName></TableName><ColumnName>label</ColumnName><ColumnType>char</ColumnType><ColumnLength>30</ColumnLength><Format><column_display>show</column_display><content_type>plain</content_type><justify>left</justify></Format></QueryColumn><QueryColumn><Name>rowid</Name><TableName></TableName><ColumnName>rowid</ColumnName><ColumnType>char</ColumnType><ColumnLength>30</ColumnLength><Format><column_display>show</column_display><content_type>plain</content_type><justify>left</justify></Format></QueryColumn><QueryColumn><Name>warehouse</Name><TableName></TableName><ColumnName></ColumnName><ColumnType></ColumnType><ColumnLength></ColumnLength><Format><column_display>show</column_display><content_type>plain</content_type><justify>left</justify></Format></QueryColumn></QueryColumns><OrderColumns></OrderColumns><Assignments></Assignments></Query><CriteriaLinks></CriteriaLinks></CriteriaItem><CriteriaItem><Name>Hidecolumns</Name><Title>HideColumns</Title><QueryTableName></QueryTableName><QueryColumnName></QueryColumnName><CriteriaType>LIST</CriteriaType><CriteriaDisplay>CHECKBOX</CriteriaDisplay><ExpandDisplay>NOINPUT</ExpandDisplay><ReturnColumn></ReturnColumn><DisplayColumn></DisplayColumn><OverviewColumn></OverviewColumn><MatchColumn></MatchColumn><CriteriaDefaults></CriteriaDefaults><CriteriaList>Ref=1,Description=2,Warehouse=3,Stock=4</CriteriaList><Query><TableSql></TableSql><WhereSql></WhereSql><GroupSql></GroupSql><RowSelection></RowSelection><SQLRaw></SQLRaw><SQL><QuerySql></QuerySql></SQL><QueryColumns></QueryColumns><OrderColumns></OrderColumns><Assignments></Assignments></Query><CriteriaLinks></CriteriaLinks></CriteriaItem></Criteria><Output><PageHeaders></PageHeaders><PageFooters></PageFooters><DisplayOrders><DisplayOrder><ColumnName>ref</ColumnName><OrderNumber>1</OrderNumber></DisplayOrder><DisplayOrder><ColumnName>stocktotal</ColumnName><OrderNumber>2</OrderNumber></DisplayOrder><DisplayOrder><ColumnName>prodid</ColumnName><OrderNumber>3</OrderNumber></DisplayOrder><DisplayOrder><ColumnName>id_padre</ColumnName><OrderNumber>4</OrderNumber></DisplayOrder><DisplayOrder><ColumnName>descripcion_padre</ColumnName><OrderNumber>5</OrderNumber></DisplayOrder><DisplayOrder><ColumnName>ref_padre</ColumnName><OrderNumber>6</OrderNumber></DisplayOrder><DisplayOrder><ColumnName>descripcion_producto</ColumnName><OrderNumber>7</OrderNumber></DisplayOrder><DisplayOrder><ColumnName>stock</ColumnName><OrderNumber>8</OrderNumber></DisplayOrder><DisplayOrder><ColumnName>almacen</ColumnName><OrderNumber>9</OrderNumber></DisplayOrder><DisplayOrder><ColumnName>rowid</ColumnName><OrderNumber>10</OrderNumber></DisplayOrder><DisplayOrder><ColumnName>stock_padre</ColumnName><OrderNumber>11</OrderNumber></DisplayOrder></DisplayOrders><Groups><Group><GroupName>id_padre</GroupName><BeforeGroupHeader>blankline</BeforeGroupHeader><AfterGroupHeader>blankline</AfterGroupHeader><BeforeGroupTrailer>blankline</BeforeGroupTrailer><AfterGroupTrailer>blankline</AfterGroupTrailer><GroupHeaders><GroupHeader><GroupHeaderColumn>ref_padre</GroupHeaderColumn><GroupHeaderCustom></GroupHeaderCustom></GroupHeader><GroupHeader><GroupHeaderColumn>descripcion_padre</GroupHeaderColumn><GroupHeaderCustom></GroupHeaderCustom></GroupHeader><GroupHeader><GroupHeaderColumn>stock_padre</GroupHeaderColumn><GroupHeaderCustom></GroupHeaderCustom></GroupHeader></GroupHeaders><GroupTrailers></GroupTrailers></Group></Groups><Graphs></Graphs></Output></EntryForm></ReportQuery></Report>

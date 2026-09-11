@@ -1,0 +1,92 @@
+<?xml version='1.0' encoding='ISO-8859-1'?><mylist>
+<label>liste des créances</label>
+<titlemenu>Créances</titlemenu>
+<mainmenu></mainmenu>
+<leftmenu></leftmenu>
+<elementtab></elementtab>
+<perms></perms>
+<datatable>true</datatable>
+<langs></langs>
+<export>0</export>
+<model_pdf></model_pdf>
+<author></author>
+<querylist>
+FROM llx_societe as s, llx_facture as f WHERE s.rowid = f.fk_soc AND (f.fk_statut!=1 OR (f.fk_statut!=2 AND f.close_code is not null))
+</querylist>
+<fieldinit>
+
+</fieldinit>
+<querydo>
+
+</querydo>
+<fields>
+	<field >
+	 	<name>Société</name>
+	 	<field>s.nom</field>
+	 	<alias></alias>
+	 	<type>Text</type>
+	 	<pos>1</pos>
+	 	<param></param>
+	 	<align>left</align>
+	 	<enabled>1</enabled>
+	 	<sumreport>0</sumreport>
+	 	<avgreport>0</avgreport>
+	 	<visible>1</visible>
+	 	<filter>1</filter>
+	 	<width>100</width>
+	 	<widthpdf>0</widthpdf>
+	 	<filterinit></filterinit>
+	</field>
+	<field >
+	 	<name>encours</name>
+	 	<field>sum(f.total_ttc)</field>
+	 	<alias>totencours</alias>
+	 	<type>Price</type>
+	 	<pos>2</pos>
+	 	<param></param>
+	 	<align>left</align>
+	 	<enabled>1</enabled>
+	 	<sumreport></sumreport>
+	 	<avgreport></avgreport>
+	 	<visible>1</visible>
+	 	<filter>1</filter>
+	 	<width>100</width>
+	 	<widthpdf></widthpdf>
+	 	<filterinit></filterinit>
+	</field>
+	<field >
+	 	<name>Limite Encours</name>
+	 	<field>s.outstanding_limit</field>
+	 	<alias></alias>
+	 	<type>Price</type>
+	 	<pos>3</pos>
+	 	<param></param>
+	 	<align>left</align>
+	 	<enabled>1</enabled>
+	 	<sumreport>0</sumreport>
+	 	<avgreport>0</avgreport>
+	 	<visible>1</visible>
+	 	<filter>1</filter>
+	 	<width>100</width>
+	 	<widthpdf>0</widthpdf>
+	 	<filterinit></filterinit>
+	</field>
+	<field >
+	 	<name>Ecart</name>
+	 	<field>(sum(f.total_ttc) - COALESCE(s.outstanding_limit, 0))</field>
+	 	<alias>Ecart</alias>
+	 	<type>Price</type>
+	 	<pos>4</pos>
+	 	<param></param>
+	 	<align>left</align>
+	 	<enabled>1</enabled>
+	 	<sumreport>1</sumreport>
+	 	<avgreport>1</avgreport>
+	 	<visible>1</visible>
+	 	<filter>1</filter>
+	 	<width>100</width>
+	 	<widthpdf></widthpdf>
+	 	<filterinit></filterinit>
+	</field>
+</fields>
+</mylist>

@@ -1,0 +1,18 @@
+# Dolibarr language file - fr_FR - Documents de Reçus de paiements
+CHARSET=UTF-8
+param_PAYMENTRECEIPT=Paramètres généraux du module reçu de paiements
+_PAYMENTRECEIPT_PDFDONTDOWNLOAD_INFO_ABB_=Ouvrir les documents pdf de reçus de paiements dans le navigateur permet d'éviter d'avoir à les télécharger pour consultation et d'utiliser ainsi le Plugin PDF du navigateur. Attention : Les documents générés lorsque ce paramètre est activé ne sont plus visibles dans les pages d'édition de reçus de paiements lorsque ce paramètre est désactivé.Par contre, ils seront visibles mais non accessibles dans les autres pages.<br> <br>Ce paramètre est trés utile dans les installations en serveur local, ou la possibilité d'accés aux fichiers dans l'arborescence du site ne pose pas de problème de sécurité. Il faudra cependant faire une évaluation des risques lors d'une installation sur un site en hébergement.
+sectionParametrage=Section de Paramétrage
+loaddefaultparameters=Recharger les paramétres par défaut
+Module51200Name=Reçu de paiement
+Module51200Desc=Gestion de documents de reçus de paiements
+paymentreceipt=Reçu de paiement
+PDForgeDescription= modèle de document de reçus de paiements de base au format A5
+Payment_receiptSetup=Configuration du module reçu de paiement
+Reçudeversement=Reçu de versement
+Montantverse=Montant versé
+Montantverseenlettres=Montant versé en lettres
+Modedepaiement=Mode de paiement
+Anciensolde=Ancien solde
+Noveausolde=Noveau solde
+Cachetetsignature=Cachet et signature

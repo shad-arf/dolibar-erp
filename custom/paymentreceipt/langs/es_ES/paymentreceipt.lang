@@ -1,0 +1,19 @@
+# Dolibarr language file - es_ES - Doocumentos de recibos de pago
+CHARSET=UTF-8
+
+param_PAYMENTRECEIPT =Configuración general del módulo recibo de pago
+_PAYMENTRECEIPT_PDFDONTDOWNLOAD_INFO_ABB_ = Abrir los documentos PDF en el navegador evita tener que descargarlos para su consulta y por lo tanto utilizar el plug-in PDF del navegador. Advertencia: Los documentos que se generan cuando se habilita este parámetro ya no son visibles en la edición de páginas de recibos de pago cuando este parámetro esta desactivado. Al contrario, serán visible pero no accesible en otras páginas <br>. Este parámetro es muy útil en instalaciones con servidor local, donde la posibilidad de acceder a los archivos en el árbol del sitio no presenta un problema de seguridad. Sin embargo, se hará una evaluación de riesgos si se instala en un sitio en alojamiento.
+sectionParametrage=Sección de parametrado
+loaddefaultparameters=Cargar parámetros por defecto
+Module51200Name=Recibo de pago
+Module51200Desc=Gestión de documentos de recibos de pago
+paymentreceipt=Recibo de pago
+PDForgeDescription= modelo de documento de recibo de pago de base al formato A5
+Payment_receiptSetup=Configuración del módulo Recibo de pago
+Reçudeversement=Recibo de pago
+Montantverse=importe pagado
+Montantverseenlettres=importe pagado en letras
+Modedepaiement=Modo de pago
+Anciensolde=Antiguo balance 
+Noveausolde=Nuevo balance 
+Cachetetsignature=Sello y firma

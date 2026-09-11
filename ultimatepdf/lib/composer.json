@@ -1,0 +1,7 @@
+{
+    "require": {
+        "kwn/number-to-words": "^1.6",
+		"tecnickcom/tcpdf": "6.2.*",
+        "setasign/fpdi": "^2.0"
+    }
+}

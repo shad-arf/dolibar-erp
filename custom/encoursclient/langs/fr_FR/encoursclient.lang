@@ -1,0 +1,94 @@
+# Copyright (C) 2017 Mikael Carlavan <contact@mika-carl.fr>
+# Copyright (C) 2022 Julien Marchand <julien.marchand@iouston.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#
+# Générique
+#
+
+# Module label 'ModuleEncoursClientName'
+ModuleEncoursClientName = Encours client
+# Module description 'ModuleEncoursClientDesc'
+ModuleEncoursClientDesc = Module permettant d'afficher l'encours client sur les commandes et factures
+
+
+#
+# Page d'administration
+#
+EncoursClientSetup = Configuration du module
+Settings = Réglages
+EncoursClientSetupPage = Page de réglage du module
+EncoursClientOptions = Options
+Description = Description
+Action = Action
+DescDISABLE_ORDER_CREATION_WHEN_OUTSTAND = Désactiver la création des commandes lorsque l'encours client dépasse la limite autorisée, sinon un message d'avertissement sera affiché
+DescTAKE_ALL_ENTITY_IN_OUTSTANDING = Encours calculé entre toutes les entités
+DescUSE_IDPROF1_FOR_OUTSTANDING = Utiliser le siren pour calculer l'encours d'établissements d'un même groupe (indiquer l'encours au niveau de la maison mère).
+DescUSE_TTC_FOR_OUTSTANDING = Calculer l'encours sur le montant TTC, par défaut sur le montant HT
+
+#
+# Page À propos
+#
+About = À propos
+EncoursClientAbout = À propos du module
+EncoursClientAboutPage = Page à propos du module
+EncoursClientAboutDescLong = Ce module a été développé par <a href="http://www.mikael-carlavan.fr">Mikael Carlavan</a> pour <a href="http://www.iouston.com">iouston informatique </a>.<br />La documentation du module est disponible en ligne :<br /><a href="%s">%s</a>
+MaintenanceAndSupportTitle = Maintenance et support
+MaintenanceAndSupportDescLong = Aucun support à l'utilisation ou à l'installation n'est fourni. Si besoin, nous pouvons vous accompagner moyennant la prise en charge par vos soins du coût de l’intervention.   <br />L'achat de ce module vous permet d'obtenir une maintenance corrective durant un an à compter de la date d'acquisition. Les <a href="https://iouston.space/gestion/ticketsup/public/">demandes de support doivent être réalisées via notre plateforme de support</a>.
+UpdateTitle = Mise à jour
+UpdateDescLong = L'achat de ce module vous permet d'obtenir gratuitement les mises à jour du module pendant 1 an à compter de la date d’achat du module.
+ModulesTitle = Nos autres modules :
+ModulesDescLong = Retrouvez tous <a href="http://www.iouston.com/systeme-gestion-entreprise-dolibarr/modules-dolibarr/">nos autres modules sur notre site</a> et sur <a href="https://www.dolistore.com/fr/recherche?controller=search&orderby=position&orderway=desc&search_query=iouston&submit_search=">dolistore</a>.
+IoustonDesc = Spécialiste dolibarr : Intégration sur mesure, développement spécifique, formation, maintenance.
+
+# ChangeLog
+ChangeLog = ChangeLog
+ChnageLogVersion = Version
+ChnageLogDate = Date
+ChnageLogUpdates = Modification apportées
+EncoursClientFirstVersion = Première version
+20210106Update = Calcul de l'encours dans le multisociete entre les entités (nécessite module multisociete)
+20220315Update = Compatibilité avec V14 et +
+20220415Update = Amélioration compatibilité avec multisociete
+20220426Update = Ajoute le calcul de l'encours sur un numéro siren commun
+20220428Update = Ajoute option mode de calcul encours sur ht ou ttc et autres petites améliorations
+
+#
+NoResults = Aucun résultat
+OrderCannotBeCreated = La création de cette commande n'est pas possible car elle entraînerait un dépassement de l'encours autorisé.
+OutstandingStatut = État des encours
+OrderSetInBC3Condition = La création de cette commande entraine un dépassement de l'encours autorisé, cette commande est donc placée en BC3. Merci d'en informer le client.
+TotalByEntite = Total par entité
+OutstandingBillEntity = Montant encours toute entité confondue
+InfoOutstandingModeCalculation = L'encourt client est calculé sur la base du numéro de SIREN N° Siren 
+OutStandingParent = Le montant d'encours autorisé est celui indiqué pour la maison mère  de ce tiers :  
+NoParent = Aucune maison mère signalée pour ce tiers, le montant de l'encours autorisé ne peut être trouvé
+WhichIsShareWith = commun à : 
+NumberEtab =  établissement(s)
+TotalByEtablissement = Total par établissement
+TotalByEtab = Établissement : 
+AddAParent = Ce tiers devrait avoir une maison mère, afin que le montant d'encours autorisé puisse être obtenu !
+EncoursClientActions = Actions
+EnCoursSirenFromSiret = Mettre à jour en base les siren des sociétés qui ont un siret, mais pas de siren (toutes entité confondue si vous utilisez multisociété)
+EnCoursUpdateSirenFromSiret = Lancer la requete de mise à jour
+EnCoursClientNbSIRENUpdated = numéros siren mis à jour
+EnCoursClientZeroSIRENUpdated = Aucun numéro de siren à mettre à jour
+OutStandingModeHT = Encours calculé sur le montant HT
+OutStandingModeTTC = Encours calculé sur le montant TTC
+EnCoursClientModeHT = HT
+EnCoursClientModeHT = TTC
+Thirdparty = Tiers
+ThisisaParent = Cet établissement est sans doute la maison mère
+

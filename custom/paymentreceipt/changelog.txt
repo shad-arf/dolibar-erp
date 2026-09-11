@@ -1,0 +1,20 @@
+* payment receipt 2.2 for Dolibarr 11, 2020-05-24:
+
+- Fix double currency occurence in string
+-----------------------
+* payment receipt 2.1 for Dolibarr 10, 2020-02-18:
+
+- Fix bug on decimal letters
+- Fix bug on Draft copy
+-----------------------
+* payment receipt 2.0 for Dolibarr 4.0.x, 2017-10-17:
+
+- Deletion of unuseful Parameter
+- Inclusion of Pdf visualisation inside the Browser.
+
+-----------------------
+* payment receipt 1.1 for Dolibarr 4.0.x, 2017-03-20:
+- Fix : client attribute has changed to thirdparty in object societe
+
+-----------------------
+* payment receipt 1.0 for Dolibarr 3.9.x, 2016-06-16 :

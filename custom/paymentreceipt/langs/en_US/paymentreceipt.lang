@@ -1,0 +1,18 @@
+# Dolibarr language file - en_US - Payment receipts documents 
+CHARSET=UTF-8
+param_PAYMENTRECEIPT = general parameters for payment receipt Module
+_PAYMENTRECEIPT_PDFDONTDOWNLOAD_INFO_ABB_ = Open pdf payments receipts documents in the browser avoids having to download them for consultation and thus use the PDF Plugin browser. Warning: Documents generated when this setting is enabled are no longer visible in the edition pages of payments received when this parameter is unactivated. However, they will be visible but not accessible in other pages <br>. this parameter is very useful in local server installs, where the possibility to access  files in the site tree is not a safety problem. However,one should make a risk assessment when installed on a site hosting.
+sectionParametrage= Parameterizing Section
+loaddefaultparameters=Load default parameters
+Module51200Name=Payment receipt
+Module51200Desc=Management of Payment receipts documents 
+paymentreceipt=Payment receipt
+PDForgeDescription= Basic payment receipt document model - A5 format
+Payment_receiptSetup=Payment receipt module configuration
+Reçudeversement=Payment receipt
+Montantverse=Paid amount 
+Montantverseenlettres=Paid amount in letters
+Modedepaiement=Payment mode
+Anciensolde=Old balance
+Noveausolde=New balance
+Cachetetsignature=Stamp and signature
