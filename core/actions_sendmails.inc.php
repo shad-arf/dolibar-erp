@@ -1,5 +1,7 @@
 <?php
 /* Copyright (C) 2013 Laurent Destailleur  <eldy@users.sourceforge.net>
+ * Copyright (C) 2024-2025	MDW				<mdeweerd@users.noreply.github.com>
+ * Copyright (C) 2024-2025  Frédéric France         <frederic.france@free.fr>
 *  Copyright (C) 2013 Juanjo Menent		   <jmenent@2byte.es>
 *
 * This program is free software; you can redistribute it and/or modify
@@ -22,13 +24,32 @@
  *  \brief			Code for actions on sending mails from object page
  */
 
-// $mysoc must be defined
-// $id must be defined
-// $paramname may be defined
-// $autocopy may be defined (used to know the automatic BCC to add)
-// $triggersendname must be set (can be '')
-// $actiontypecode can be set
-// $object and $uobject may be defined
+/**
+ * @var Societe $mysoc
+ * @var CommonObject $object
+ * @var Conf $conf
+ * @var DoliDB $db
+ * @var HookManager $hookmanager
+ * @var Societe $mysoc
+ * @var Translate $langs
+ * @var User $user
+ *
+ * @var int		$id
+ * @var string 	$dolibarr_main_url_root
+ * @var string 	$action
+ * @var ?string $subject
+ * @var ?string $triggersendname (can be '')
+ * @var ?string	$sendcontext
+ * @var ?string	$autocopy (used to know the automatic BCC to add)
+ * @var ?string	$actiontypecode
+ * @var ?string $paramname
+ */
+'
+@phan-var-force Societe      $mysoc
+@phan-var-force CommonObject $object
+';
+
+$error = 0;
 
 /*
  * Add file in email form
@@ -49,7 +70,7 @@ if (GETPOST('addfile', 'alpha')) {
 /*
  * Remove file in email form
  */
-if (!empty($_POST['removedfile']) && empty($_POST['removAll'])) {
+if (GETPOST('removedfile') && !GETPOST('removeAll')) {
 	$trackid = GETPOST('trackid', 'aZ09');
 
 	require_once DOL_DOCUMENT_ROOT.'/core/lib/files.lib.php';
@@ -60,14 +81,14 @@ if (!empty($_POST['removedfile']) && empty($_POST['removAll'])) {
 
 	// TODO Delete only files that was uploaded from email form. This can be addressed by adding the trackid into the temp path then changing donotdeletefile to 2 instead of 1 to say "delete only if into temp dir"
 	// GETPOST('removedfile','alpha') is position of file into $_SESSION["listofpaths"...] array.
-	dol_remove_file_process(GETPOST('removedfile', 'alpha'), 0, 1, $trackid); // We do not delete because if file is the official PDF of doc, we don't want to remove it physically
+	dol_remove_file_process(GETPOSTINT('removedfile'), 0, 1, $trackid); // We do not delete because if file is the official PDF of doc, we don't want to remove it physically
 	$action = 'presend';
 }
 
 /*
  * Remove all files in email form
  */
-if (GETPOST('removAll', 'alpha')) {
+if (GETPOST('removeAll', 'alpha')) {
 	$trackid = GETPOST('trackid', 'aZ09');
 
 	$listofpaths = array();
@@ -91,7 +112,7 @@ if (GETPOST('removAll', 'alpha')) {
 	foreach ($listofpaths as $key => $value) {
 		$pathtodelete = $value;
 		$filetodelete = $listofnames[$key];
-		$result = dol_delete_file($pathtodelete, 1); // Delete uploded Files
+		$result = dol_delete_file($pathtodelete, 1); // Delete uploaded Files
 
 		$langs->load("other");
 		setEventMessages($langs->trans("FileWasRemoved", $filetodelete), null, 'mesgs');
@@ -103,23 +124,31 @@ if (GETPOST('removAll', 'alpha')) {
 /*
  * Send mail
  */
-if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST['removAll'] && !$_POST['removedfile'] && !$_POST['cancel'] && !$_POST['modelselected']) {
+if (($action == 'send' || $action == 'relance') && !GETPOST('addfile') && !GETPOST('removeAll') && !GETPOST('removedfile') && !GETPOST('cancel') && !GETPOST('modelselected')) {
 	if (empty($trackid)) {
 		$trackid = GETPOST('trackid', 'aZ09');
 	}
 
+	// Set tmp user directory (used to convert images embedded as img src=data:image)
+	$vardir = $conf->user->dir_output."/".$user->id;
+	$upload_dir_tmp = $vardir.'/temp'; // TODO Add $keytoavoidconflict in upload_dir path
+
 	$subject = '';
-	$actionmsg = '';
+	//$actionmsg = '';
 	$actionmsg2 = '';
+	$thirdparty = null;
+	$contact = null;
+	$result = 0;
 
 	$langs->load('mails');
+
+	$sendtosocid = 0; // Id of related thirdparty
 
 	if (is_object($object)) {
 		$result = $object->fetch($id);
 
-		$sendtosocid = 0; // Id of related thirdparty
 		if (method_exists($object, "fetch_thirdparty") && !in_array($object->element, array('member', 'user', 'expensereport', 'societe', 'contact'))) {
-			$resultthirdparty = $object->fetch_thirdparty();
+			$object->fetch_thirdparty();
 			$thirdparty = $object->thirdparty;
 			if (is_object($thirdparty)) {
 				$sendtosocid = $thirdparty->id;
@@ -151,7 +180,7 @@ if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST
 				}
 			}
 		} else {
-			dol_print_error('', "Use actions_sendmails.in.php for an element/object '".$object->element."' that is not supported");
+			dol_print_error(null, "Use actions_sendmails.in.php for an element/object '".$object->element."' that is not supported");
 		}
 
 		if (is_object($hookmanager)) {
@@ -160,9 +189,11 @@ if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST
 		}
 	} else {
 		$thirdparty = $mysoc;
+		$result = 1; // No object to fetch (e.g. Setup -> Emails -> send test email): consider OK
 	}
 
 	if ($result > 0) {
+		$from = '';
 		$sendto = '';
 		$sendtocc = '';
 		$sendtobcc = '';
@@ -171,7 +202,7 @@ if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST
 		$sendtoccuserid = array();
 
 		// Define $sendto
-		$receiver = $_POST['receiver'];
+		$receiver = GETPOST('receiver', 'alphawithlgt');
 		if (!is_array($receiver)) {
 			if ($receiver == '-1') {
 				$receiver = array();
@@ -181,14 +212,14 @@ if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST
 		}
 
 		$tmparray = array();
-		if (trim($_POST['sendto'])) {
+		if (trim(GETPOST('sendto', 'alphawithlgt'))) {
 			// Recipients are provided into free text field
-			$tmparray[] = trim($_POST['sendto']);
+			$tmparray[] = trim(GETPOST('sendto', 'alphawithlgt'));
 		}
 
-		if (trim($_POST['tomail'])) {
+		if (trim(GETPOST('tomail', 'alphawithlgt'))) {
 			// Recipients are provided into free hidden text field
-			$tmparray[] = trim($_POST['tomail']);
+			$tmparray[] = trim(GETPOST('tomail', 'alphawithlgt'));
 		}
 
 		if (count($receiver) > 0) {
@@ -199,6 +230,15 @@ if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST
 				} elseif ($val == 'contact') { // Key selected means current contact
 					$tmparray[] = dol_string_nospecial($contact->getFullName($langs), ' ', array(",")).' <'.$contact->email.'>';
 					$sendtoid[] = $contact->id;
+				} elseif ($val && $object->element == 'project' && empty($object->socid)) {	// $val is the Id of a contact
+					$contact = new Contact($db);
+					$ret = $contact->fetch((int) $val);
+					if ($ret > 0 && !empty($contact->socid)) {
+						$thirdparty = new Societe($db);
+						$thirdparty->fetch($contact->socid);
+						$tmparray[] = $thirdparty->contact_get_property((int) $val, 'email');
+						$sendtoid[] = ((int) $val);
+					}
 				} elseif ($val) {	// $val is the Id of a contact
 					$tmparray[] = $thirdparty->contact_get_property((int) $val, 'email');
 					$sendtoid[] = ((int) $val);
@@ -206,8 +246,8 @@ if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST
 			}
 		}
 
-		if (!empty($conf->global->MAIN_MAIL_ENABLED_USER_DEST_SELECT)) {
-			$receiveruser = $_POST['receiveruser'];
+		if (getDolGlobalString('MAIN_MAIL_ENABLED_USER_DEST_SELECT')) {
+			$receiveruser = GETPOST('receiveruser', 'alphawithlgt');
 			if (is_array($receiveruser) && count($receiveruser) > 0) {
 				$fuserdest = new User($db);
 				foreach ($receiveruser as $key => $val) {
@@ -220,7 +260,7 @@ if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST
 		$sendto = implode(',', $tmparray);
 
 		// Define $sendtocc
-		$receivercc = $_POST['receivercc'];
+		$receivercc = GETPOST('receivercc', 'alphawithlgt');
 		if (!is_array($receivercc)) {
 			if ($receivercc == '-1') {
 				$receivercc = array();
@@ -229,17 +269,17 @@ if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST
 			}
 		}
 		$tmparray = array();
-		if (trim($_POST['sendtocc'])) {
-			$tmparray[] = trim($_POST['sendtocc']);
+		if (trim(GETPOST('sendtocc', 'alphawithlgt'))) {
+			$tmparray[] = trim(GETPOST('sendtocc', 'alphawithlgt'));
 		}
 		if (count($receivercc) > 0) {
 			foreach ($receivercc as $key => $val) {
 				if ($val == 'thirdparty') {	// Key selected means current thirdparty (may be usd for current member or current user too)
 					// Recipient was provided from combo list
-					$tmparray[] = dol_string_nospecial($thirdparty->name, ' ', array(",")).' <'.$thirdparty->email.'>';
+					$tmparray[] = dol_string_nospecial((string) $thirdparty->name, ' ', array(",")).' <'.$thirdparty->email.'>';
 				} elseif ($val == 'contact') {	// Key selected means current contact
 					// Recipient was provided from combo list
-					$tmparray[] = dol_string_nospecial($contact->name, ' ', array(",")).' <'.$contact->email.'>';
+					$tmparray[] = dol_string_nospecial((string) $contact->name, ' ', array(",")).' <'.$contact->email.'>';
 					//$sendtoid[] = $contact->id;  TODO Add also id of contact in CC ?
 				} elseif ($val) {				// $val is the Id of a contact
 					$tmparray[] = $thirdparty->contact_get_property((int) $val, 'email');
@@ -247,8 +287,8 @@ if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST
 				}
 			}
 		}
-		if (!empty($conf->global->MAIN_MAIL_ENABLED_USER_DEST_SELECT)) {
-			$receiverccuser = $_POST['receiverccuser'];
+		if (getDolGlobalString('MAIN_MAIL_ENABLED_USER_DEST_SELECT')) {
+			$receiverccuser = GETPOST('receiverccuser', 'alphawithlgt');
 
 			if (is_array($receiverccuser) && count($receiverccuser) > 0) {
 				$fuserdest = new User($db);
@@ -272,31 +312,46 @@ if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST
 
 			$reg = array();
 			$fromtype = GETPOST('fromtype', 'alpha');
+			$emailsendersignature = '';
 			if ($fromtype === 'robot') {
-				$from = dol_string_nospecial($conf->global->MAIN_MAIL_EMAIL_FROM, ' ', array(",")).' <'.$conf->global->MAIN_MAIL_EMAIL_FROM.'>';
+				$from = dol_string_nospecial(getDolGlobalString('MAIN_MAIL_EMAIL_FROM'), ' ', array(",")).' <' . getDolGlobalString('MAIN_MAIL_EMAIL_FROM').'>';
 			} elseif ($fromtype === 'user') {
 				$from = dol_string_nospecial($user->getFullName($langs), ' ', array(",")).' <'.$user->email.'>';
 			} elseif ($fromtype === 'company') {
-				$from = dol_string_nospecial($conf->global->MAIN_INFO_SOCIETE_NOM, ' ', array(",")).' <'.$conf->global->MAIN_INFO_SOCIETE_MAIL.'>';
+				$from = dol_string_nospecial(getDolGlobalString('MAIN_INFO_SOCIETE_NOM'), ' ', array(",")).' <' . getDolGlobalString('MAIN_INFO_SOCIETE_MAIL').'>';
 			} elseif (preg_match('/user_aliases_(\d+)/', $fromtype, $reg)) {
 				$tmp = explode(',', $user->email_aliases);
-				$from = trim($tmp[($reg[1] - 1)]);
+				$from = trim($tmp[((int) $reg[1] - 1)]);
 			} elseif (preg_match('/global_aliases_(\d+)/', $fromtype, $reg)) {
-				$tmp = explode(',', $conf->global->MAIN_INFO_SOCIETE_MAIL_ALIASES);
-				$from = trim($tmp[($reg[1] - 1)]);
+				$tmp = explode(',', getDolGlobalString('MAIN_INFO_SOCIETE_MAIL_ALIASES'));
+				$from = trim($tmp[((int) $reg[1] - 1)]);
 			} elseif (preg_match('/senderprofile_(\d+)_(\d+)/', $fromtype, $reg)) {
-				$sql = 'SELECT rowid, label, email FROM '.MAIN_DB_PREFIX.'c_email_senderprofile';
+				$sql = 'SELECT rowid, label, email, signature FROM '.MAIN_DB_PREFIX.'c_email_senderprofile';
 				$sql .= ' WHERE rowid = '.(int) $reg[1];
 				$resql = $db->query($sql);
 				$obj = $db->fetch_object($resql);
 				if ($obj) {
 					$from = dol_string_nospecial($obj->label, ' ', array(",")).' <'.$obj->email.'>';
+					$emailsendersignature = $obj->signature;
+				}
+			} elseif (preg_match('/from_template_(\d+)/', $fromtype, $reg)) {
+				$sql = 'SELECT rowid, email_from FROM '.MAIN_DB_PREFIX.'c_email_templates';
+				$sql .= ' WHERE rowid = '.(int) $reg[1];
+				$resql = $db->query($sql);
+				$obj = $db->fetch_object($resql);
+				if ($obj) {
+					$from = $obj->email_from;
 				}
 			} else {
-				$from = dol_string_nospecial($_POST['fromname'], ' ', array(",")).' <'.$_POST['frommail'].'>';
+				$from = dol_string_nospecial(GETPOST('fromname'), ' ', array(",")).' <'.GETPOST('frommail').'>';
 			}
 
-			$replyto = dol_string_nospecial($_POST['replytoname'], ' ', array(",")).' <'.$_POST['replytomail'].'>';
+			$replyto = '';
+			if (GETPOST('replytomail')) {
+				$replyto = dol_string_nospecial(GETPOST('replytoname'), ' ', array(","));
+				$replyto .= ($replyto ? ' ' : '').'<'.GETPOST('replytomail').'>';
+			}
+
 			$message = GETPOST('message', 'restricthtml');
 			$subject = GETPOST('subject', 'restricthtml');
 
@@ -306,18 +361,18 @@ if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST
 			// <img alt="" src="'.$urlwithroot.'viewimage.php?modulepart=medias&amp;entity=1&amp;file=image/ldestailleur_166x166.jpg" style="height:166px; width:166px" />
 			$message = preg_replace('/(<img.*src=")[^\"]*viewimage\.php([^\"]*)modulepart=medias([^\"]*)file=([^\"]*)("[^\/]*\/>)/', '\1'.$urlwithroot.'/viewimage.php\2modulepart=medias\3file=\4\5', $message);
 
-			$sendtobcc = GETPOST('sendtoccc');
+			$sendtobcc = GETPOST('sendtoccc', 'alphawithlgt');
 			// Autocomplete the $sendtobcc
 			// $autocopy can be MAIN_MAIL_AUTOCOPY_PROPOSAL_TO, MAIN_MAIL_AUTOCOPY_ORDER_TO, MAIN_MAIL_AUTOCOPY_INVOICE_TO, MAIN_MAIL_AUTOCOPY_SUPPLIER_PROPOSAL_TO...
 			if (!empty($autocopy)) {
-				$sendtobcc .= (empty($conf->global->$autocopy) ? '' : (($sendtobcc ? ", " : "").$conf->global->$autocopy));
+				$sendtobcc .= (getDolGlobalString($autocopy) ? (($sendtobcc ? ", " : "") . getDolGlobalString($autocopy)) : '');
 			}
 
-			$deliveryreceipt = $_POST['deliveryreceipt'];
+			$deliveryreceipt = GETPOSTINT('deliveryreceipt') ? 1 : 0;
 
 			if ($action == 'send' || $action == 'relance') {
-				$actionmsg2 = $langs->transnoentities('MailSentBy').' '.CMailFile::getValidAddress($from, 4, 0, 1).' '.$langs->transnoentities('To').' '.CMailFile::getValidAddress($sendto, 4, 0, 1);
-				if ($message) {
+				$actionmsg2 = $langs->transnoentities('MailSentByTo', CMailFile::getValidAddress($from, 4, 0, 1), CMailFile::getValidAddress($sendto, 4, 0, 1));
+				/*if ($message) {
 					$actionmsg = $langs->transnoentities('MailFrom').': '.dol_escape_htmltag($from);
 					$actionmsg = dol_concatdesc($actionmsg, $langs->transnoentities('MailTo').': '.dol_escape_htmltag($sendto));
 					if ($sendtocc) {
@@ -326,7 +381,7 @@ if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST
 					$actionmsg = dol_concatdesc($actionmsg, $langs->transnoentities('MailTopic').": ".$subject);
 					$actionmsg = dol_concatdesc($actionmsg, $langs->transnoentities('TextUsedInTheMessageBody').":");
 					$actionmsg = dol_concatdesc($actionmsg, $message);
-				}
+				}*/
 			}
 
 			// Create form object
@@ -341,10 +396,12 @@ if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST
 
 			// Make substitution in email content
 			$substitutionarray = getCommonSubstitutionArray($langs, 0, null, $object);
-			$substitutionarray['__EMAIL__'] = $sendto;
-			$substitutionarray['__CHECK_READ__'] = (is_object($object) && is_object($object->thirdparty)) ? '<img src="'.DOL_MAIN_URL_ROOT.'/public/emailing/mailing-read.php?tag='.urlencode($object->thirdparty->tag).'&securitykey='.urlencode($conf->global->MAILING_EMAIL_UNSUBSCRIBE_KEY).'" width="1" height="1" style="width:1px;height:1px" border="0"/>' : '';
 
-			$parameters = array('mode'=>'formemail');
+			$substitutionarray['__SENDEREMAIL_SIGNATURE__'] = (empty($emailsendersignature) ? $user->signature : $emailsendersignature);
+			$substitutionarray['__EMAIL__'] = $sendto;
+			$substitutionarray['__CHECK_READ__'] = (is_object($object) && is_object($object->thirdparty)) ? '<img src="'.DOL_MAIN_URL_ROOT.'/public/emailing/mailing-read.php?tag=undefined&securitykey='.dol_hash(getDolGlobalString('MAILING_EMAIL_UNSUBSCRIBE_KEY')."-undefined", 'md5').'" width="1" height="1" style="width:1px;height:1px" border="0"/>' : '';
+
+			$parameters = array('mode' => 'formemail');
 			complete_substitutions_array($substitutionarray, $langs, $object, $parameters);
 
 			$subject = make_substitutions($subject, $substitutionarray);
@@ -359,9 +416,9 @@ if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST
 			if (empty($sendcontext)) {
 				$sendcontext = 'standard';
 			}
-			$mailfile = new CMailFile($subject, $sendto, $from, $message, $filepath, $mimetype, $filename, $sendtocc, $sendtobcc, $deliveryreceipt, -1, '', '', $trackid, '', $sendcontext);
+			$mailfile = new CMailFile($subject, $sendto, $from, $message, $filepath, $mimetype, $filename, $sendtocc, $sendtobcc, $deliveryreceipt, -1, '', '', $trackid, '', $sendcontext, $replyto, $upload_dir_tmp);
 
-			if ($mailfile->error) {
+			if (!empty($mailfile->error) || !empty($mailfile->errors)) {
 				setEventMessages($mailfile->error, $mailfile->errors, 'errors');
 				$action = 'presend';
 			} else {
@@ -369,15 +426,20 @@ if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST
 				if ($result) {
 					// Initialisation of datas of object to call trigger
 					if (is_object($object)) {
+						$db->begin();	// Transaction for post action must start after sending email to avoid lock when sending email that may be long
+
 						if (empty($actiontypecode)) {
-							$actiontypecode = 'AC_OTH_AUTO'; // Event insert into agenda automatically
+							$actiontypecode = 'AC_OTH_AUTO'; // Event inserted into agenda automatically
 						}
 
 						$object->socid = $sendtosocid; // To link to a company
 						$object->sendtoid = $sendtoid; // To link to contact-addresses. This is an array.
 						$object->actiontypecode = $actiontypecode; // Type of event ('AC_OTH', 'AC_OTH_AUTO', 'AC_XXX'...)
-						$object->actionmsg = $actionmsg; // Long text (@todo Replace this with $message, we already have details of email in dedicated properties)
-						$object->actionmsg2 = $actionmsg2; // Short text ($langs->transnoentities('MailSentBy')...);
+						$object->actionmsg = $message; // Long text
+						$object->actionmsg2 = $actionmsg2; // Short text ($langs->transnoentities('MailSentByTo')...);
+						if (getDolGlobalString('MAIN_MAIL_REPLACE_EVENT_TITLE_BY_EMAIL_SUBJECT')) {
+							$object->actionmsg2		= $subject; // Short text
+						}
 
 						$object->trackid = $trackid;
 						$object->fk_element = $object->id;
@@ -385,9 +447,17 @@ if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST
 						if (is_array($attachedfiles) && count($attachedfiles) > 0) {
 							$object->attachedfiles = $attachedfiles;
 						}
-						if (is_array($sendtouserid) && count($sendtouserid) > 0 && !empty($conf->global->MAIN_MAIL_ENABLED_USER_DEST_SELECT)) {
+						if (is_array($sendtouserid) && count($sendtouserid) > 0 && getDolGlobalString('MAIN_MAIL_ENABLED_USER_DEST_SELECT')) {
 							$object->sendtouserid = $sendtouserid;
 						}
+
+						// TODO Fix this: Such properties does not exists on all objects
+						$object->context['email_msgid'] = $mailfile->msgid;
+						$object->context['email_from'] = $from;
+						$object->context['email_subject'] = $subject;
+						$object->context['email_to'] = $sendto;
+						$object->context['email_tocc'] = $sendtocc;
+						$object->context['email_tobcc'] = $sendtobcc;
 
 						$object->email_msgid = $mailfile->msgid; // @todo Set msgid into $mailfile after sending
 						$object->email_from = $from;
@@ -395,22 +465,36 @@ if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST
 						$object->email_to = $sendto;
 						$object->email_tocc = $sendtocc;
 						$object->email_tobcc = $sendtobcc;
-						$object->email_subject = $subject;
-						$object->email_msgid = $mailfile->msgid;
 
-						// Call of triggers (you should have set $triggersendname to execute trigger. $trigger_name is deprecated)
-						if (!empty($triggersendname) || !empty($trigger_name)) {
-							// Call trigger
-							$result = $object->call_trigger(empty($triggersendname) ? $trigger_name : $triggersendname, $user);
+						// Call of triggers (you should have set $triggersendname to execute trigger.
+						if (!empty($triggersendname)) {
+							if ($triggersendname == 'BILL_SENTBYMAIL' && $object instanceof Facture) {
+								/* @var Facture $object */
+
+								// If sending email for invoice, we increase the counter of invoices sent by email
+								$sql = "UPDATE ".MAIN_DB_PREFIX."facture SET email_sent_counter = email_sent_counter + 1";
+								$sql .= " WHERE rowid = ".((int) $object->id);
+
+								$db->query($sql);
+
+								$object->email_sent_counter += 1;
+							}
+
+							$result = $object->call_trigger($triggersendname, $user);  // @phan-suppress-current-line PhanPossiblyUndeclaredGlobalVariable
 							if ($result < 0) {
 								$error++;
 							}
-							// End call triggers
 							if ($error) {
 								setEventMessages($object->error, $object->errors, 'errors');
 							}
 						}
 						// End call of triggers
+
+						if (!$error) {
+							$db->commit();
+						} else {
+							$db->rollback();
+						}
 					}
 
 					// Redirect here
@@ -418,24 +502,25 @@ if (($action == 'send' || $action == 'relance') && !$_POST['addfile'] && !$_POST
 					$mesg = $langs->trans('MailSuccessfulySent', $mailfile->getValidAddress($from, 2), $mailfile->getValidAddress($sendto, 2));
 					setEventMessages($mesg, null, 'mesgs');
 
-					$moreparam = '';
-					if (isset($paramname2) || isset($paramval2)) {
-						$moreparam .= '&'.($paramname2 ? $paramname2 : 'mid').'='.$paramval2;
-					}
-					header('Location: '.$_SERVER["PHP_SELF"].'?'.($paramname ? $paramname : 'id').'='.(is_object($object) ? $object->id : '').$moreparam);
+					header('Location: '.$_SERVER["PHP_SELF"].'?'.($paramname ?? 'id').'='.(is_object($object) ? $object->id : ''));
 					exit;
 				} else {
 					$langs->load("other");
 					$mesg = '<div class="error">';
-					if ($mailfile->error) {
+					if (!empty($mailfile->error) || !empty($mailfile->errors)) {
 						$mesg .= $langs->transnoentities('ErrorFailedToSendMail', dol_escape_htmltag($from), dol_escape_htmltag($sendto));
-						$mesg .= '<br>'.$mailfile->error;
+						if (!empty($mailfile->error)) {
+							$mesg .= '<br>'.$mailfile->error;
+						}
+						if (!empty($mailfile->errors) && is_array($mailfile->errors)) {
+							$mesg .= '<br>'.implode('<br>', $mailfile->errors);
+						}
 					} else {
 						$mesg .= $langs->transnoentities('ErrorFailedToSendMail', dol_escape_htmltag($from), dol_escape_htmltag($sendto));
-						if (!empty($conf->global->MAIN_DISABLE_ALL_MAILS)) {
+						if (getDolGlobalString('MAIN_DISABLE_ALL_MAILS')) {
 							$mesg .= '<br>Feature is disabled by option MAIN_DISABLE_ALL_MAILS';
 						} else {
-							$mesg .= '<br>Unkown Error, please refers to your administrator';
+							$mesg .= '<br>Unknown Error, please refer to your administrator';
 						}
 					}
 					$mesg .= '</div>';

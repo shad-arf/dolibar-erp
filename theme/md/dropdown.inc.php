@@ -1,8 +1,39 @@
 <?php
+/* Copyright (C) 2025		MDW	<mdeweerd@users.noreply.github.com>
+ */
 if (!defined('ISLOADEDBYSTEELSHEET')) {
 	die('Must be call by steelsheet');
-} ?>
-/* <style type="text/css" > dont remove this line it's an ide hack */
+}
+include_once DOL_DOCUMENT_ROOT."/core/lib/functions2.lib.php";
+
+// When no photo, we show the login name, so we need an offset to output picto at a fixed position.
+$atoploginusername = empty($user->photo) ? 52 : 0;
+
+/**
+ * @var string $colorbackhmenu1
+ * @var string $colorbacklinepair1
+ * @var string $colortextbackhmenu
+ * @var string $colortextlink
+ * @var int<0,1> $disableimages
+ * @var string $left
+ * @var string $right
+ */
+'
+@phan-var-force string $colorbackhmenu1
+@phan-var-force string $colorbacklinepair1
+@phan-var-force string $colortextbackhmenu
+@phan-var-force string $colortextlink
+@phan-var-force int<0,1> $disableimages
+@phan-var-force string $left
+@phan-var-force string $right
+';
+
+$borderradius = getDolGlobalString('THEME_ELDY_USEBORDERONTABLE') ? getDolGlobalInt('THEME_ELDY_BORDER_RADIUS', 6) : 0;
+$WIDTHMENUDROPDOWN = 370;
+?>
+
+/* IDE Hack <style type="text/css"> */
+
 /*
  * Dropdown of user popup
  */
@@ -21,30 +52,42 @@ button.dropdown-item.global-search-item {
 }
 
 
-#topmenu-bookmark-dropdown a.login-dropdown-a {
-	color: #fff;
+#topmenu-global-search-dropdown a.login-dropdown-a,
+#topmenu-quickadd-dropdown a.login-dropdown-a,
+#topmenu-bookmark-dropdown a.login-dropdown-a,
+#topmenu-uploadfile-dropdown a.login-dropdown-a {
+	color: var(--colortextbackhmenu);
 }
-div#topmenu-bookmark-dropdown {
+
+div.login_block_tools > div {
 	position: fixed;
-	right: 20px;
+	<?php echo $right; ?>: <?php print !getDolGlobalString('MAIN_OPTIMIZEFORTEXTBROWSER') ? (55 + $atoploginusername) : 85; ?>px;
 	top: 0px;
 }
+
+div#topmenu-login-dropdown {
+	position: fixed;
+	<?php echo $right; ?>: 10px;
+	top: 0px;
+}
+
 
 #topmenu-login-dropdown .dropdown-toggle:after {
 	display: none;
 }
 
-#topmenu-bookmark-dropdown .dropdown-menu {
-	min-width: 300px;
-	max-width: 360px;
+#topmenu-global-search-dropdown .dropdown-menu, #topmenu-quickadd-dropdown .dropdown-menu, #topmenu-bookmark-dropdown .dropdown-menu, #topmenu-login-dropdown .dropdown-menu {
+	min-width: <?php echo $WIDTHMENUDROPDOWN; ?>px;
+	max-width: <?php echo $WIDTHMENUDROPDOWN; ?>px;
+	width: <?php echo $WIDTHMENUDROPDOWN; ?>px;
 }
 
 button.dropdown-item.global-search-item {
 	outline: none;
 }
 
-.open>.dropdown-search, .open>.dropdown-bookmark, .open>.dropdown-menu{
-	display: block;
+.open>.dropdown-search, .open>.dropdown-quickadd, .open>.dropdown-bookmark, .open>.dropdown-menu{
+	display: block !important;
 }
 
 .dropdown-search {
@@ -67,7 +110,6 @@ button.dropdown-item.global-search-item {
 	border: 1px solid #ccc;
 	border: 1px solid rgba(0,0,0,.15);
 	border-radius: 4px;
-	-webkit-box-shadow: 0 6px 12px rgba(0,0,0,.175);
 	box-shadow: 0 6px 12px rgba(0,0,0,.175);
 }
 .dropdown-bookmark {
@@ -90,7 +132,6 @@ button.dropdown-item.global-search-item {
 	border: 1px solid #ccc;
 	border: 1px solid rgba(0,0,0,.15);
 	border-radius: 4px;
-	-webkit-box-shadow: 0 6px 12px rgba(0,0,0,.175);
 	box-shadow: 0 6px 12px rgba(0,0,0,.175);
 }
 .dropdown-menu {
@@ -111,10 +152,18 @@ button.dropdown-item.global-search-item {
 	-webkit-background-clip: padding-box;
 	background-clip: padding-box;
 	border: 1px solid #ccc;
-	border: 1px solid rgba(0,0,0,.15);
+	border: 1px solid rgba(128, 128, 128, .15);
 	border-radius: 4px;
-	-webkit-box-shadow: 0 6px 12px rgba(0,0,0,.175);
 	box-shadow: 0 6px 12px rgba(0,0,0,.175);
+}
+
+
+/* CSS to hide the arrow to show open/close */
+div#topmenu-global-search-dropdown, div#topmenu-quickadd-dropdown, div#topmenu-bookmark-dropdown {
+	padding-right: 2px;
+}
+div#topmenu-global-search-dropdown a::after, div#topmenu-quickadd-dropdown a::after, div#topmenu-bookmark-dropdown a::after {
+	display: none;
 }
 
 
@@ -124,8 +173,9 @@ button.dropdown-item.global-search-item {
 
 .dropdown-toggle::after {
 	/* font part */
-	font-family: "Font Awesome 5 Free";
+	font-family: "<?php echo getDolGlobalString('MAIN_FONTAWESOME_FAMILY', 'Font Awesome 5 Free'); ?>";
 	font-size: 0.7em;
+	line-height: 1.7em;
 	font-weight: 900;
 	font-style: normal;
 	font-variant: normal;
@@ -147,8 +197,9 @@ button.dropdown-item.global-search-item {
 }
 
 /*
-* MENU Dropdown
-*/
+ * MENU Dropdown
+ */
+
 .login_block.usedropdown .logout-btn{
 	/* display: none; */
 }
@@ -194,8 +245,16 @@ button.dropdown-item.global-search-item {
 	max-width: 100%;
 }
 
-div#topmenu-global-search-dropdown, div#topmenu-bookmark-dropdown {
-	line-height: 46px;
+div#topmenu-global-search-dropdown,
+div#topmenu-quickadd-dropdown,
+div#topmenu-bookmark-dropdown,
+div#topmenu-uploadfile-dropdown,
+div#topmenu-login-dropdown {
+	<?php if ($disableimages) { ?>
+		line-height: 35px;
+	<?php } else { ?>
+		line-height: 49px;
+	<?php } ?>
 }
 a.top-menu-dropdown-link {
 	padding: 8px;
@@ -215,9 +274,11 @@ a.top-menu-dropdown-link {
 }
 
 .dropdown-menu > .user-header{
-	background: rgb(<?php echo $colorbackhmenu1 ?>);
+	/*background: var(--colorbackhmenu1);
+	color: var(--colortextbackhmenu);*/
+	background: #f9f9f9;
+	color: #000;
 }
-
 
 
 .dropdown-menu .dropdown-header{
@@ -238,24 +299,30 @@ a.top-menu-dropdown-link {
 	border-top: 1px solid #f0f0f0;
 	background-color: #f9f9f9;
 	padding: 10px;
+	text-align: start;
 }
 
-
-.dropdown-menu > .user-body, .dropdown-body{
+.dropdown-menu > .user-body {
 	padding: 15px;
+}
+.dropdown-menu > .user-body, .dropdown-body{
 	border-bottom: 1px solid #f4f4f4;
-	border-top: 1px solid #dddddd;
+	border-top: 1px solid #f0f0f0;
 	white-space: normal;
+}
+#top-bookmark-search-nothing-found {
+	padding: 15px;
+	display: block;
 }
 
 .dropdown-menu > .bookmark-body, .dropdown-body{
-	padding: 10px 0;
 	overflow-y: auto;
 	max-height: 60vh ; /* fallback for browsers without support for calc() */
 	max-height: calc(90vh - 110px) ;
 	white-space: normal;
 }
-#topmenu-bookmark-dropdown .dropdown-menu > .bookmark-body, #topmenu-bookmark-dropdown .dropdown-body{
+#topmenu-quickadd-dropdown .dropdown-menu > .bookmark-body, #topmenu-quickadd-dropdown .dropdown-body,
+#topmenu-bookmark-dropdown .dropdown-menu > .bookmark-body, #topmenu-bookmark-dropdown .dropdown-body {
 	max-height: 60vh ; /* fallback for browsers without support for calc() */
 	max-height: calc(90vh - 200px) ;
 }
@@ -277,7 +344,11 @@ a.top-menu-dropdown-link {
 }
 
 
-#topmenu-login-dropdown, #topmenu-bookmark-dropdown, #topmenu-global-search-dropdown {
+#topmenu-login-dropdown,
+#topmenu-quickadd-dropdown,
+#topmenu-bookmark-dropdown,
+#topmenu-global-search-dropdown,
+#topmenu-uploadfile-dropdown {
 	padding: 0 5px 0 5px;
 }
 #topmenu-login-dropdown a:hover{
@@ -286,7 +357,7 @@ a.top-menu-dropdown-link {
 
 #topmenuloginmoreinfo-btn, #topmenulogincompanyinfo-btn {
 	display: block;
-	text-aling: right;
+	text-align: start;
 	color:#666;
 	cursor: pointer;
 }
@@ -295,6 +366,20 @@ a.top-menu-dropdown-link {
 	display: none;
 	clear: both;
 	font-size: 0.95em;
+}
+
+a.dropdown-item {
+	text-align: start;
+}
+.dropdown-item.bookmark-item {
+	padding-top: 10px;
+	padding-bottom: 10px;
+	padding-left: 14px;
+	padding-right: 14px;
+}
+.dropdown-item.bookmark-item:before {
+	width: 20px;
+	padding-left: 2px;
 }
 
 .button-top-menu-dropdown {
@@ -316,14 +401,11 @@ a.top-menu-dropdown-link {
 	user-select: none;
 	background-image: none;
 	border: 1px solid transparent;
-	border-radius: 4px;
+	border-radius: <?php echo $borderradius; ?>px;
 }
 
 .user-footer .button-top-menu-dropdown {
 	color: #666666;
-	border-radius: 0;
-	-webkit-box-shadow: none;
-	-moz-box-shadow: none;
 	box-shadow: none;
 	border-width: 1px;
 	background-color: #f4f4f4;
@@ -332,8 +414,6 @@ a.top-menu-dropdown-link {
 
 .dropdown-menu a.top-menu-dropdown-link {
 	color: rgb(<?php print $colortextlink; ?>) !important;
-	-webkit-box-shadow: none;
-	-moz-box-shadow: none;
 	box-shadow: none;
 	display: block;
 	margin: 5px 0px;
@@ -350,15 +430,12 @@ a.top-menu-dropdown-link {
 	text-align: inherit;
 	background-color: transparent;
 	border: 0;
-
-	-webkit-box-shadow: none;
-	-moz-box-shadow: none;
 	box-shadow: none;
 }
 
 .dropdown-item::before {
 	/* font part */
-	font-family: "Font Awesome 5 Free";
+	font-family: "<?php echo getDolGlobalString('MAIN_FONTAWESOME_FAMILY', 'Font Awesome 5 Free'); ?>";
 	font-weight: 900;
 	font-style: normal;
 	font-variant: normal;
@@ -379,15 +456,33 @@ a.top-menu-dropdown-link {
 	content: "\f35d";
 }
 
-.dropdown-item.active, .dropdown-item:hover, .dropdown-item:focus  {
+.dropdown-item.active, .dropdown-item:hover, .dropdown-item:hover::before, .dropdown-item:hover span::before, .dropdown-item:focus, .dropdown-item:focus span::before  {
 	color: #<?php echo $colortextbackhmenu; ?> !important;
 	text-decoration: none;
 	background: rgb(<?php echo $colorbackhmenu1 ?>);
 }
 
+
 /*
-* SEARCH
-*/
+ * SELECT FIELDS
+ */
+
+li.liinputsearch {
+	position: sticky;
+	display: block;
+	top: 0;
+	background: var(--colorbackbody);
+	z-index: 1;
+}
+
+
+/*
+ * SEARCH
+ */
+
+#topmenu-global-search-dropdown .dropdown-menu {
+	width: 310px !important;
+}
 
 .dropdown-search-input {
 	width: 100%;
@@ -405,7 +500,8 @@ a.top-menu-dropdown-link {
 	background-repeat: no-repeat;
 	background-size: 16px 16px;
 	background-position: 95% center;
-	border-radius: 50px;
+	border-radius: <?php print $borderradius; ?>px;
+
 	border: 1px solid #c4c4c2 !important;
 	transition: all 250ms ease-in-out;
 	backface-visibility: hidden;
@@ -414,23 +510,251 @@ a.top-menu-dropdown-link {
 }
 
 
+
+/*
+ * QUICK ADD
+ */
+
+#topmenu-quickadd-dropdown .dropdown-menu {
+	width: 310px;
+	color: #444;
+}
+
+.quickadd-body.dropdown-body {
+	padding: unset;
+	padding-top: 10px;
+	padding-bottom: 10px;
+}
+
+.quickadd-item {
+	font-size: 1.1em;
+	padding-top: 8px;
+	padding-bottom: 8px;
+}
+
+.quickadd-item:before {
+	content: none;
+}
+
+.quickadd-header {
+	color: #444 !important;
+}
+
+div.quickadd {
+	display: -ms-flexbox;
+	display: -webkit-flex;
+	display: flex;
+	-webkit-flex-direction: row;
+	-ms-flex-direction: row;
+	flex-direction: row;
+	-webkit-flex-wrap: wrap;
+	-ms-flex-wrap: wrap;
+	flex-wrap: wrap;
+	-webkit-justify-content: center;
+	-ms-flex-pack: center;
+	justify-content: center;
+	-webkit-align-content: center;
+	-ms-flex-line-pack: center;
+	align-content: center;
+	-webkit-align-items: flex-start;
+	-ms-flex-align: start;
+	align-items: flex-start;
+}
+
+div.quickadd a {
+	color: #444;
+}
+
+div.quickadd a:hover, div.quickadd a:active {
+	color: #000000;
+}
+
+div.quickaddblock {
+	width: 95px;
+	height: 80px;
+}
+
+div.quickaddblock:hover,
+div.quickaddblock:active,
+div.quickaddblock:focus {
+	background: <?php print $colorbacklinepair1; ?>;
+}
+
+
+/* for the dropdown on action buttons */
+.dropdown-holder {
+	position: relative;
+	display: inline-block;
+}
+
+.dropdown-content {
+	display: none;
+	position: absolute;
+	z-index: 5;
+	width: 300px;
+	right:0;
+	bottom: 0;
+	transform: translateY(100%);
+
+	background: #fff;
+	border: 1px solid #bbb;
+	text-align: <?php echo $left; ?>;
+	box-shadow: 5px 5px 0px rgba(0,0,0,0.1);
+}
+
+/* dropdown --up variant */
+.dropdown-holder.--up .dropdown-content{
+	bottom: auto;
+	top: 0;
+	transform: translateY(-100%);
+}
+
+/* dropdown --left variant */
+.dropdown-holder.--left .dropdown-content{
+	right: auto;
+	left: 12px;
+}
+
+
+.dropdown-content a {
+	margin-right: auto !important;
+	margin-left: auto !important;
+}
+.dropdown-content .butAction {
+	background: none;
+	color: #000 !important;
+}
+.dropdown-content a:is(.butAction,.butActionDelete,.butActionRefused) {
+	display: flex;
+	border-radius: 0;
+}
+.dropdown-content .butAction:hover {
+	box-shadow: none;
+	background-color: var(--butactionbg);
+	color: var(--textbutaction) !important;
+	text-decoration: none;
+}
+
+.dropdown-content .butActionDelete{
+	background-color: transparent !important;
+	color: #633 !important;
+}
+.dropdown-content .butActionDelete:hover {
+	box-shadow: none;
+	background-color: var(--butactiondeletebg) !important;
+	color: #633 !important;
+	text-decoration: none;
+}
+
+.dropdown-content .butActionRefused {
+	margin-left: 0;
+	margin-right: 0;
+	border: none;
+}
+
+.dropdown-holder.open .dropdown-content {
+	display: block;
+}
+
+
+/** dropdown arrow used to clearly identify parent button of dropdown*/
+.dropdown-holder.open .dropdown-content::before {
+	--triangleBorderSize : 5px;
+	position: absolute;
+	content: "";
+	top: calc(var(--triangleBorderSize) * -1);
+	right: 12px;
+	width: 0px;
+	height: 0px;
+	border-style: solid;
+	border-width: 0 var(--triangleBorderSize) var(--triangleBorderSize) var(--triangleBorderSize);
+	border-color: transparent transparent #ffff transparent;
+	transform: rotate(0deg);
+}
+
+/* dropdown --up variant*/
+.dropdown-holder.--up.open .dropdown-content::before{
+	top: auto;
+	bottom: calc(var(--triangleBorderSize) * -1);
+	border-width: 0 var(--triangleBorderSize) var(--triangleBorderSize) var(--triangleBorderSize);
+	transform: rotate(180deg);
+}
+
+/* dropdown --left variant*/
+.dropdown-holder.--left.open .dropdown-content::before{
+	right: auto;
+	left: 12px;
+}
+
+
 /* smartphone */
 @media only screen and (max-width: 767px)
 {
-	#topmenu-bookmark-dropdown a.login-dropdown-a {
-		color: #000;
+	div.login_block {
+		top: unset;
+		border-right: 1px solid rgba(0, 0, 0, 0.3)
 	}
 
-	#topmenu-bookmark-dropdown .dropdown-menu {
-		width: 230px;
+	.userimg.atoplogin img.userphoto, .userimgatoplogin img.userphoto {
+		width: 16px;
+		height: 16px;
+	}
+	div#topmenu-login-dropdown {
+		height: 20px;
+		line-height: 20px;
 	}
 
-	div#topmenu-bookmark-dropdown {
+	#topmenu-login-dropdown .dropdown-menu {
+		min-width: 220px;
+		max-width: 360px;
+	}
+
+	div.login_block a .atoploginusername {
+		color: var(--colortextbackvmenu);
+	}
+
+	.dropdown-menu:not(.ai_dropdown) {
+		border: none;
+		box-shadow: none;
+	}
+
+	#topmenu-global-search-dropdown a.login-dropdown-a,
+	#topmenu-quickadd-dropdown a.login-dropdown-a,
+	#topmenu-bookmark-dropdown a.login-dropdown-a,
+	#topmenu-login-dropdown a.login-dropdown-a,
+	#topmenu-uploadfile-dropdown a.login-dropdown-a {
+		color: var(--colortextbackvmenu);
+	}
+
+	#topmenu-global-search-dropdown .dropdown-menu,
+	#topmenu-quickadd-dropdown .dropdown-menu,
+	#topmenu-bookmark-dropdown .dropdown-menu,
+	#topmenu-login-dropdown .dropdown-menu,
+	#topmenu-uploadfile-dropdown .dropdown-menu {
+		width: 100%;
+		min-width: unset;
+	}
+
+	div.login_block_tools > div {
+		position: unset;
+	}
+	div#topmenu-global-search-dropdown,
+	div#topmenu-quickadd-dropdown,
+	div#topmenu-bookmark-dropdown,
+	div#topmenu-uploadfile-dropdown,
+	div#topmenu-login-dropdown {
 		position: unset;
 	}
 
-	div#topmenu-global-search-dropdown, div#topmenu-bookmark-dropdown {
+	div#topmenu-global-search-dropdown,
+	div#topmenu-quickadd-dropdown,
+	div#topmenu-bookmark-dropdown,
+	div#topmenu-uploadfile-dropdown {
 		line-height: unset;
+	}
+
+	div.login_block_other {
+		padding-top: 2px;
 	}
 
 	ul.tmenu {
@@ -459,7 +783,7 @@ a.top-menu-dropdown-link {
 
 
 .dropdown-search-input::placeholder {
-	color: color(#575756 a(0.8));
+	color: color(#575756);
 	letter-spacing: 1.5px;
 }
 

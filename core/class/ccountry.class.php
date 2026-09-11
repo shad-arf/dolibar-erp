@@ -1,5 +1,8 @@
 <?php
-/* Copyright (C) 2007-2011 Laurent Destailleur  <eldy@users.sourceforge.net>
+/* Copyright (C) 2007-2011  Laurent Destailleur     <eldy@users.sourceforge.net>
+ * Copyright (C) 2024-2025	MDW					    <mdeweerd@users.noreply.github.com>
+ * Copyright (C) 2025		Charlene Benke	        <charlene@patas-monkey.com>
+ * Copyright (C) 2025       Frédéric France         <frederic.france@free.fr>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,58 +25,56 @@
  */
 
 // Put here all includes required by your class file
-//require_once DOL_DOCUMENT_ROOT.'/core/class/commonobject.class.php';
-//require_once DOL_DOCUMENT_ROOT.'/societe/class/societe.class.php';
-//require_once DOL_DOCUMENT_ROOT.'/product/class/product.class.php';
+require_once DOL_DOCUMENT_ROOT.'/core/class/commondict.class.php';
 
 
 /**
  * 	Class to manage dictionary Countries (used by imports)
  */
-class Ccountry // extends CommonObject
+class Ccountry extends CommonDict
 {
 	/**
-	 * @var DoliDB Database handler.
+	 * @var string
 	 */
-	public $db;
-
-	/**
-	 * @var string Error code (or message)
-	 */
-	public $error = '';
-
-	/**
-	 * @var string[] Error codes (or messages)
-	 */
-	public $errors = array();
-
 	public $element = 'ccountry'; //!< Id that identify managed objects
+	/**
+	 * @var string
+	 */
 	public $table_element = 'c_country'; //!< Name of table without prefix where object is stored
 
 	/**
-	 * @var int ID
+	 * @var string
 	 */
-	public $id;
-
-	public $code;
 	public $code_iso;
 
 	/**
-	 * @var string Countries label
+	 * @var string
 	 */
-	public $label;
+	public $eec;
 
-	public $active;
+	/**
+	 * @var int
+	 */
+	public $favorite;
 
+	/**
+	 * @var string
+	 */
+	public $numeric_code;
+
+
+	/**
+	 * @var array<string,array{type:string,label:string,langfile?:string,enabled:int<0,2>|string,position:int,notnull?:int,visible:int<-6,6>|string,alwayseditable?:int<0,1>|string,noteditable?:int<0,1>,default?:string,index?:int,foreignkey?:string,searchall?:int<0,1>,isameasure?:int<0,1>,css?:string,cssview?:string,csslist?:string,help?:string,showoncombobox?:int<0,4>|string,disabled?:int<0,1>,arrayofkeyval?:array<int|string,string>,autofocusoncreate?:int<0,1>,comment?:string,copytoclipboard?:int<1,2>,validate?:int<0,1>,showonheader?:int<0,1>,searchmulti?:int<0,1>}>
+	 */
 	public $fields = array(
-		'label' => array('type'=>'varchar(250)', 'label'=>'Label', 'enabled'=>1, 'visible'=>1, 'position'=>15, 'notnull'=>-1, 'showoncombobox'=>'1')
+		'label' => array('type' => 'varchar(250)', 'label' => 'Label', 'enabled' => 1, 'visible' => 1, 'position' => 15, 'notnull' => -1, 'showoncombobox' => 1)
 	);
 
 
 	/**
 	 *  Constructor
 	 *
-	 *  @param      DoliDb		$db      Database handler
+	 *  @param      DoliDB		$db      Database handler
 	 */
 	public function __construct($db)
 	{
@@ -86,13 +87,14 @@ class Ccountry // extends CommonObject
 	 *
 	 *  @param      User	$user        User that create
 	 *  @param      int		$notrigger   0=launch triggers after, 1=disable triggers
-	 *  @return     int      		   	 <0 if KO, Id of created object if OK
+	 *  @return     int      		   	 Return integer <0 if KO, Id of created object if OK
 	 */
 	public function create($user, $notrigger = 0)
 	{
-		global $conf, $langs;
 		$error = 0;
-
+		if (empty($this->id)) {
+			return -1;
+		}
 		// Clean parameters
 		if (isset($this->code)) {
 			$this->code = trim($this->code);
@@ -104,25 +106,25 @@ class Ccountry // extends CommonObject
 			$this->label = trim($this->label);
 		}
 		if (isset($this->active)) {
-			$this->active = trim($this->active);
+			$this->active = (int) $this->active;
 		}
 
 		// Check parameters
 		// Put here code to add control on parameters values
 
 		// Insert request
-		$sql = "INSERT INTO ".MAIN_DB_PREFIX."c_country(";
+		$sql = "INSERT INTO ".$this->db->prefix()."c_country(";
 		$sql .= "rowid,";
 		$sql .= "code,";
 		$sql .= "code_iso,";
 		$sql .= "label,";
 		$sql .= "active";
 		$sql .= ") VALUES (";
-		$sql .= " ".(!isset($this->rowid) ? 'NULL' : "'".$this->db->escape($this->rowid)."'").",";
-		$sql .= " ".(!isset($this->code) ? 'NULL' : "'".$this->db->escape($this->code)."'").",";
-		$sql .= " ".(!isset($this->code_iso) ? 'NULL' : "'".$this->db->escape($this->code_iso)."'").",";
-		$sql .= " ".(!isset($this->label) ? 'NULL' : "'".$this->db->escape($this->label)."'").",";
-		$sql .= " ".(!isset($this->active) ? 'NULL' : "'".$this->db->escape($this->active)."'")."";
+		$sql .= (int) $this->id;
+		$sql .= ", ".(!isset($this->code) ? 'NULL' : "'".$this->db->escape($this->code)."'");
+		$sql .= ", ".(!isset($this->code_iso) ? 'NULL' : "'".$this->db->escape($this->code_iso)."'");
+		$sql .= ", ".(!isset($this->label) ? 'NULL' : "'".$this->db->escape($this->label)."'");
+		$sql .= ", ".(!isset($this->active) ? 'NULL' : "'".$this->db->escape((string) $this->active)."'");
 		$sql .= ")";
 
 		$this->db->begin();
@@ -135,7 +137,7 @@ class Ccountry // extends CommonObject
 		}
 
 		if (!$error) {
-			$this->id = $this->db->last_insert_id(MAIN_DB_PREFIX."c_country");
+			$this->id = $this->db->last_insert_id($this->db->prefix()."c_country");
 		}
 
 		// Commit or rollback
@@ -168,8 +170,11 @@ class Ccountry // extends CommonObject
 		$sql .= " t.code,";
 		$sql .= " t.code_iso,";
 		$sql .= " t.label,";
-		$sql .= " t.active";
-		$sql .= " FROM ".MAIN_DB_PREFIX."c_country as t";
+		$sql .= " t.eec,";
+		$sql .= " t.active,";
+		$sql .= " t.favorite,";
+		$sql .= " t.numeric_code";
+		$sql .= " FROM ".$this->db->prefix()."c_country as t";
 		if ($id) {
 			$sql .= " WHERE t.rowid = ".((int) $id);
 		} elseif ($code) {
@@ -179,17 +184,21 @@ class Ccountry // extends CommonObject
 		}
 
 		dol_syslog(get_class($this)."::fetch", LOG_DEBUG);
+
 		$resql = $this->db->query($sql);
 		if ($resql) {
 			if ($this->db->num_rows($resql)) {
 				$obj = $this->db->fetch_object($resql);
 
 				if ($obj) {
-					$this->id = $obj->rowid;
+					$this->id = (int) $obj->rowid;
 					$this->code = $obj->code;
 					$this->code_iso = $obj->code_iso;
 					$this->label = $obj->label;
-					$this->active = $obj->active;
+					$this->eec = $obj->eec;
+					$this->active = (int) $obj->active;
+					$this->favorite = $obj->favorite;
+					$this->numeric_code = $obj->numeric_code;
 				}
 
 				$this->db->free($resql);
@@ -209,11 +218,10 @@ class Ccountry // extends CommonObject
 	 *
 	 *  @param      User	$user        User that modify
 	 *  @param      int		$notrigger	 0=launch triggers after, 1=disable triggers
-	 *  @return     int     		   	 <0 if KO, >0 if OK
+	 *  @return     int     		   	 Return integer <0 if KO, >0 if OK
 	 */
 	public function update($user = null, $notrigger = 0)
 	{
-		global $conf, $langs;
 		$error = 0;
 
 		// Clean parameters
@@ -227,7 +235,7 @@ class Ccountry // extends CommonObject
 			$this->label = trim($this->label);
 		}
 		if (isset($this->active)) {
-			$this->active = trim($this->active);
+			$this->active = (int) $this->active;
 		}
 
 
@@ -235,11 +243,11 @@ class Ccountry // extends CommonObject
 		// Put here code to add control on parameters values
 
 		// Update request
-		$sql = "UPDATE ".MAIN_DB_PREFIX."c_country SET";
+		$sql = "UPDATE ".$this->db->prefix()."c_country SET";
 		$sql .= " code=".(isset($this->code) ? "'".$this->db->escape($this->code)."'" : "null").",";
 		$sql .= " code_iso=".(isset($this->code_iso) ? "'".$this->db->escape($this->code_iso)."'" : "null").",";
 		$sql .= " label=".(isset($this->label) ? "'".$this->db->escape($this->label)."'" : "null").",";
-		$sql .= " active=".(isset($this->active) ? $this->active : "null")."";
+		$sql .= " active=".(isset($this->active) ? $this->active : "null");
 		$sql .= " WHERE rowid=".((int) $this->id);
 
 		$this->db->begin();
@@ -271,14 +279,13 @@ class Ccountry // extends CommonObject
 	 *
 	 *	@param  User	$user        User that delete
 	 *  @param	int		$notrigger	 0=launch triggers after, 1=disable triggers
-	 *  @return	int					 <0 if KO, >0 if OK
+	 *  @return	int					 Return integer <0 if KO, >0 if OK
 	 */
 	public function delete($user, $notrigger = 0)
 	{
-		global $conf, $langs;
 		$error = 0;
 
-		$sql = "DELETE FROM ".MAIN_DB_PREFIX."c_country";
+		$sql = "DELETE FROM ".$this->db->prefix()."c_country";
 		$sql .= " WHERE rowid=".((int) $this->id);
 
 		$this->db->begin();
@@ -305,7 +312,7 @@ class Ccountry // extends CommonObject
 	}
 
 	/**
-	 *  Return a link to the object card (with optionaly the picto)
+	 *  Return a link to the object card (with optionally the picto)
 	 *
 	 *	@param	int		$withpicto					Include picto in link (0=No picto, 1=Include picto into link, 2=Only picto)
 	 *	@param	string	$option						On what the link point to ('nolink', ...)

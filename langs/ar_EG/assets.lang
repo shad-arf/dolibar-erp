@@ -1,2 +1,6 @@
 # Dolibarr language file - Source file is en_US - assets
-Settings =الإعدادات
+AssetAcquisitionTypeOccasion=مستخدم
+AssetInDraft=مسودة
+AssetDepreciationOptionDuration=المدة
+AssetDepreciationOptionDurationTypeMonthly=شهري
+AssetDepreciationDuration=المدة

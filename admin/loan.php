@@ -1,5 +1,7 @@
 <?php
 /* Copyright (C) 2014-2017  Alexandre Spangaro	<aspangaro@open-dsi.fr>
+ * Copyright (C) 2024		MDW							<mdeweerd@users.noreply.github.com>
+ * Copyright (C) 2024       Frédéric France         <frederic.france@free.fr>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,13 +24,22 @@
  * \brief		Setup page to configure loan module
  */
 
+// Load Dolibarr environment
 require '../main.inc.php';
 
 // Class
 require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
-if (!empty($conf->accounting->enabled)) {
+if (isModEnabled('accounting')) {
 	require_once DOL_DOCUMENT_ROOT.'/core/class/html.formaccounting.class.php';
 }
+
+/**
+ * @var Conf $conf
+ * @var DoliDB $db
+ * @var HookManager $hookmanager
+ * @var Translate $langs
+ * @var User $user
+ */
 
 // Load translation files required by the page
 $langs->loadLangs(array('admin', 'loan'));
@@ -73,14 +84,17 @@ if ($action == 'update') {
  * View
  */
 
-llxHeader();
+llxHeader('', '', '', '', 0, 0, '', '', '', 'mod-admin page-loan');
 
 $form = new Form($db);
-if (!empty($conf->accounting->enabled)) {
+if (isModEnabled('accounting')) {
 	$formaccounting = new FormAccounting($db);
+} else {
+	$formaccounting = null;
 }
 
-$linkback = '<a href="'.DOL_URL_ROOT.'/admin/modules.php?restore_lastsearch_values=1">'.$langs->trans("BackToModuleList").'</a>';
+$linkback = '<a href="'.dolBuildUrl(DOL_URL_ROOT.'/admin/modules.php', ['restore_lastsearch_values' => 1]).'">'.img_picto($langs->trans("BackToModuleList"), 'back', 'class="pictofixedwidth"').'<span class="hideonsmartphone">'.$langs->trans("BackToModuleList").'</span></a>';
+
 print load_fiche_titre($langs->trans('ConfigLoan'), $linkback, 'title_setup');
 
 print '<form action="'.$_SERVER["PHP_SELF"].'" method="post">';
@@ -100,14 +114,14 @@ foreach ($list as $key) {
 
 	// Param
 	$label = $langs->trans($key);
-	print '<td><label for="'.$key.'">'.$label.'</label></td>';
+	print '<td><label for="' . $key . '">' . $label . '</label></td>';
 
 	// Value
 	print '<td>';
-	if (!empty($conf->accounting->enabled)) {
-		print $formaccounting->select_account(getDolGlobalString($key), $key, 1, '', 1, 1);
+	if ($formaccounting instanceof FormAccounting) {
+		print $formaccounting->select_account(getDolGlobalString($key), $key, 1, array(), 1, 1);
 	} else {
-		print '<input type="text" size="20" id="'.$key.'" name="'.$key.'" value="'.$conf->global->$key.'">';
+		print '<input type="text" size="20" id="' . $key . '" name="' . $key . '" value="' . getDolGlobalString($key) . '">';
 	}
 	print '</td></tr>';
 }
@@ -117,7 +131,7 @@ print '</tr>';
 print '</form>';
 print "</table>\n";
 
-print '<br><div style="text-align:center"><input type="submit" class="button button-edit" name="button" value="'.$langs->trans('Modify').'"></div>';
+print '<br><div class="center"><input type="submit" class="button button-edit" name="button" value="'.$langs->trans('Modify').'"></div>';
 
 // End of page
 llxFooter();

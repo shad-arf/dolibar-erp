@@ -8,7 +8,7 @@ HelpCenter=Centro de ayuda
 DolibarrHelpCenter=Dolibarr Ayuda y Centro de Soporte
 ToGoBackToDolibarr=De otra manera, <a href="%s">click aquí para continuar usando Dolibarr </a>.
 TypeSupportCommunauty=Comunidad (libre)
-NeedHelpCenter=Necesita ayuda o soporte?
+NeedHelpCenter=Necesita soporte?
 Efficiency=Eficiencia
 TypeHelpOnly=Solo ayuda
 TypeHelpDev=Ayudar+Desarrollar
@@ -17,4 +17,4 @@ BackToHelpCenter=De otra manera, <a href="%s">volver al centro de ayuda de la p�
 LinkToGoldMember=Puede llamar a uno de los entrenadores preseleccionados por Dolibarr para su idioma (%s) haciendo clic en su Widget (estado y precio máximo son actualizados automáticamente):
 PossibleLanguages=Idiomas soportados
 SubscribeToFoundation=Ayuda al proyecto Dolibarr, suscríbete a la fundación
-SeeOfficalSupport=Para el soporte oficial de Dolibarr en su idioma: <br><b><a href="%s" target="_blank">%s</a></b>
+SeeOfficalSupport=Para soporte oficial de Dolibarr en su idioma: <br><b><a href="%s" target="_blank" rel="noopener noreferrer">%s</a></b>

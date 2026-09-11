@@ -1,2 +1,2 @@
 # Dolibarr language file - Source file is en_US - errors
-ErrorRecordHasAtLeastOneChildOfType=Object %s has at least one child of type %s
+ErrorLinesCantBeNegativeOnDeposits=Lines can't be negative in a deposit. You will face problems when you will need to consume the deposit in final invoice if you do so.

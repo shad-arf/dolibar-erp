@@ -7,7 +7,7 @@
 -- Copyright (C) 2007 	   Patrick Raguin       <patrick.raguin@gmail.com>
 -- Copyright (C) 2021      Udo Tamm             <dev@dolibit.de>
 --
--- 
+--
 -- This program is free software; you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License as published by
 -- the Free Software Foundation; either version 3 of the License, or
@@ -29,10 +29,10 @@
 --
 
 --
--- Types de charges 
+-- Types de charges
 --
 
--- insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code) values (id of country, id of social charges = fk_pays id & free numbering, label, ...); 
+-- insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code) values (id of country, id of social charges = fk_pays id & free numbering, label, ...);
 
 --
 -- France
@@ -71,3 +71,20 @@ insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code
 insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code) values (41, 4107, 'Arbeiterkammerumlage',				1,1,'TAXATAK');
 insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code) values (41, 4108, 'Mitarbeitervorsorgekasse',			1,1,'TAXATMVK');
 insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code) values (41, 4109, 'Familienlastenausgleichsfond',		1,1,'TAXATFLAF');
+
+--
+-- Greece
+--
+insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code) values ( 102, 10201, 'Αναλυτική Περιοδική Δήλωση (ΑΠΔ)', 1, 1, 'ΑΠΔ');
+insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code) values ( 102, 10202, 'Φόρος Μισθωτών Υπηρεσιών (ΦΜΥ)', 1, 1, 'ΦΜΥ');
+insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code) values ( 102, 10203, 'Ασφαλιστικές εισφορές (ΕΦΚΑ)', 1, 1, 'ΕΦΚΑ');
+insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code) values ( 102, 10204, 'Προκαταβολή Φόρου Εισοδήματος', 0, 1, 'ΕΦΟΡΙΑ');
+insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code) values ( 102, 10205, 'Ενιαίος Φόρος Ιδιοκτησίας Ακινήτων (ΕΝ.Φ.Ι.Α) ', 0, 1, 'ΕΝΦΙΑ');
+insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code) values ( 102, 10206, 'Ετήσιο τέλος διατήρησης Μερίδας στο Γ.Ε.ΜΗ.', 1, 1, 'ΓΕΜΗ');
+insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code) values ( 102, 10207, 'Επαγγελματικό Επιμελητήριο', 1, 1, 'ΕΕ');
+insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code) values ( 102, 10208, 'Εμπορικό και Βιομηχανικό Επιμελητηρίο', 1, 1, 'ΕΒΕ');
+insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code) values ( 102, 10209, 'Τέλη Κυκλοφορίας', 1, 1,'ΤΕΛΗ');
+insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code) values ( 102, 10210, 'Ασφάλιση οχήματος', 1, 1,'ΑΣΦΑΛΕΙΑ');
+insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code) values ( 102, 10211, 'Ενοίκιο', 1, 1,'ΕΝΟΙΚΙΟ');
+insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code) values ( 102, 10212, 'Κοινόχρηστα', 1, 1, 'ΚΟΙΝΟ');
+insert into llx_c_chargesociales (fk_pays, id, libelle, deductible, active, code) values ( 102, 10213, 'Ηλεκτροδότηση', 1, 1, 'ΡΕΥΜΑ');

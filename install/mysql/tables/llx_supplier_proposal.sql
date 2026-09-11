@@ -20,7 +20,6 @@ CREATE TABLE llx_supplier_proposal (
   ref varchar(30) NOT NULL,
   entity integer NOT NULL DEFAULT 1,
   ref_ext varchar(255) DEFAULT NULL,
-  ref_int varchar(255) DEFAULT NULL,
   fk_soc integer DEFAULT NULL,
   fk_projet integer DEFAULT NULL,
   tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -44,6 +43,7 @@ CREATE TABLE llx_supplier_proposal (
   fk_account integer DEFAULT NULL,
   fk_currency varchar(3) DEFAULT NULL,
   fk_cond_reglement integer DEFAULT NULL,
+  deposit_percent varchar(63) DEFAULT NULL, -- default deposit % if payment term needs it
   fk_mode_reglement integer DEFAULT NULL,
   note_private text,
   note_public text,
@@ -54,7 +54,7 @@ CREATE TABLE llx_supplier_proposal (
   fk_shipping_method integer DEFAULT NULL,
   import_key varchar(14) DEFAULT NULL,
   extraparams varchar(255) DEFAULT NULL,
-  
+
   fk_multicurrency        integer,
   multicurrency_code      varchar(3),
   multicurrency_tx        double(24,8) DEFAULT 1,

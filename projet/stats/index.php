@@ -1,6 +1,8 @@
 <?php
 /* Copyright (C) 2014-2015 Florian HENRY       <florian.henry@open-concept.pro>
  * Copyright (C) 2015-2021 Laurent Destailleur <ldestailleur@users.sourceforge.net>
+ * Copyright (C) 2024-2025	MDW					<mdeweerd@users.noreply.github.com>
+ * Copyright (C) 2024-2025  Frédéric France         <frederic.france@free.fr>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,34 +24,45 @@
  *       \brief      Page for project statistics
  */
 
+// Load Dolibarr environment
 require '../../main.inc.php';
 require_once DOL_DOCUMENT_ROOT.'/core/class/dolgraph.class.php';
+require_once DOL_DOCUMENT_ROOT.'/core/class/html.formprojet.class.php';
 require_once DOL_DOCUMENT_ROOT.'/core/lib/project.lib.php';
 require_once DOL_DOCUMENT_ROOT.'/projet/class/projectstats.class.php';
 
-// Security check
-if (!$user->rights->projet->lire) {
-	accessforbidden();
-}
-
+/**
+ * @var Conf $conf
+ * @var DoliDB $db
+ * @var HookManager $hookmanager
+ * @var Translate $langs
+ * @var User $user
+ */
 
 $WIDTH = DolGraph::getDefaultGraphSizeForStats('width');
 $HEIGHT = DolGraph::getDefaultGraphSizeForStats('height');
 
-$userid = GETPOST('userid', 'int');
-$socid = GETPOST('socid', 'int');
+$search_opp_status = GETPOST("search_opp_status", 'alpha');
+
+$userid = GETPOSTINT('userid');
+$socid = GETPOSTINT('socid');
 // Security check
 if ($user->socid > 0) {
 	$action = '';
 	$socid = $user->socid;
 }
-$nowyear = strftime("%Y", dol_now());
-$year = GETPOST('year') > 0 ?GETPOST('year') : $nowyear;
-$startyear = $year - (empty($conf->global->MAIN_STATS_GRAPHS_SHOW_N_YEARS) ? 2 : max(1, min(10, $conf->global->MAIN_STATS_GRAPHS_SHOW_N_YEARS)));
+$nowyear = dol_print_date(dol_now('gmt'), "%Y", 'gmt');
+$year = GETPOSTINT('year') > 0 ? GETPOSTINT('year') : $nowyear;
+$startyear = $year - (!getDolGlobalString('MAIN_STATS_GRAPHS_SHOW_N_YEARS') ? 2 : max(1, min(10, getDolGlobalString('MAIN_STATS_GRAPHS_SHOW_N_YEARS'))));
 $endyear = $year;
 
 // Load translation files required by the page
 $langs->loadLangs(array('companies', 'projects'));
+
+// Security check
+if (!$user->hasRight('projet', 'lire')) {
+	accessforbidden();
+}
 
 
 /*
@@ -57,11 +70,11 @@ $langs->loadLangs(array('companies', 'projects'));
  */
 
 $form = new Form($db);
+$formproject = new FormProjets($db);
 
 $includeuserlist = array();
 
-
-llxHeader('', $langs->trans('Projects'));
+llxHeader('', $langs->trans('Projects'), '', '', 0, 0, '', '', '', 'mod-project page-stats');
 
 $title = $langs->trans("ProjectsStatistics");
 $dir = $conf->project->dir_output.'/temp';
@@ -82,66 +95,11 @@ if (!empty($year)) {
 	$stats_project->year = $year;
 }
 
-/*
-if (!empty($conf->global->PROJECT_USE_OPPORTUNITIES))
-{
-	// Current stats of project amount per status
-	$data1 = $stats_project->getAllProjectByStatus();
-
-	if (!is_array($data1) && $data1 < 0) {
-		setEventMessages($stats_project->error, null, 'errors');
+if (getDolGlobalString('PROJECT_USE_OPPORTUNITIES')) {
+	if ($search_opp_status) {
+		$stats_project->opp_status = $search_opp_status;
 	}
-	if (empty($data1))
-	{
-		$showpointvalue = 0;
-		$nocolor = 1;
-		$data1 = array(array(0=>$langs->trans("None"), 1=>1));
-	}
-
-	$filenamenb = $conf->project->dir_output."/stats/projectbystatus.png";
-	$fileurlnb = DOL_URL_ROOT.'/viewimage.php?modulepart=projectstats&amp;file=projectbystatus.png';
-	$px = new DolGraph();
-	$mesg = $px->isGraphKo();
-	if (empty($mesg)) {
-		$i = 0; $tot = count($data1); $legend = array();
-		while ($i <= $tot)
-		{
-			$legend[] = $data1[$i][0];
-			$i++;
-		}
-
-		$px->SetData($data1);
-		unset($data1);
-
-		if ($nocolor)
-			$px->SetDataColor(array(
-					array(
-							220,
-							220,
-							220
-					)
-			));
-
-		$px->SetLegend($legend);
-		$px->setShowLegend(0);
-		$px->setShowPointValue($showpointvalue);
-		$px->setShowPercent(1);
-		$px->SetMaxValue($px->GetCeilMaxValue());
-		$px->SetWidth($WIDTH);
-		$px->SetHeight($HEIGHT);
-		$px->SetShading(3);
-		$px->SetHorizTickIncrement(1);
-		$px->SetCssPrefix("cssboxes");
-		$px->SetType(array('pie'));
-		$px->SetTitle($langs->trans('OpportunitiesStatusForProjects'));
-		$result = $px->draw($filenamenb, $fileurlnb);
-		if ($result < 0) {
-			setEventMessages($px->error, null, 'errors');
-		}
-	} else {
-		setEventMessages(null, $mesg, 'errors');
-	}
-}*/
+}
 
 
 // Build graphic number of object
@@ -156,7 +114,8 @@ $px1 = new DolGraph();
 $mesg = $px1->isGraphKo();
 if (!$mesg) {
 	$px1->SetData($data);
-	$i = $startyear; $legend = array();
+	$i = $startyear;
+	$legend = array();
 	while ($i <= $endyear) {
 		$legend[] = $i;
 		$i++;
@@ -175,7 +134,8 @@ if (!$mesg) {
 }
 
 
-if (!empty($conf->global->PROJECT_USE_OPPORTUNITIES)) {
+$px2 = null;
+if (getDolGlobalString('PROJECT_USE_OPPORTUNITIES')) {
 	// Build graphic amount of object
 	$data = $stats_project->getAmountByMonthWithPrevYear($endyear, $startyear);
 	//var_dump($data);
@@ -187,7 +147,8 @@ if (!empty($conf->global->PROJECT_USE_OPPORTUNITIES)) {
 	$px2 = new DolGraph();
 	$mesg = $px2->isGraphKo();
 	if (!$mesg) {
-		$i = $startyear; $legend = array();
+		$i = $startyear;
+		$legend = array();
 		while ($i <= $endyear) {
 			$legend[] = $i;
 			$i++;
@@ -210,7 +171,8 @@ if (!empty($conf->global->PROJECT_USE_OPPORTUNITIES)) {
 	}
 }
 
-if (!empty($conf->global->PROJECT_USE_OPPORTUNITIES)) {
+$px3 = null;
+if (getDolGlobalString('PROJECT_USE_OPPORTUNITIES')) {
 	// Build graphic with transformation rate
 	$data = $stats_project->getWeightedAmountByMonthWithPrevYear($endyear, $startyear, 0, 0);
 	//var_dump($data);
@@ -270,12 +232,12 @@ $h++;
 
 complete_head_from_modules($conf, $langs, null, $head, $h, 'project_stats');
 
-print dol_get_fiche_head($head, 'byyear', $langs->trans("Statistics"), -1, '');
+print dol_get_fiche_head($head, 'byyear', '', -1, '');
 
 
 print '<div class="fichecenter"><div class="fichethirdleft">';
 
-print '<form name="stats" method="POST" action="'.$_SERVER["PHP_SELF"].'">';
+print '<form name="stats" method="POST" action="'.dolBuildUrl($_SERVER["PHP_SELF"]).'">';
 print '<input type="hidden" name="token" value="'.newToken().'">';
 
 print '<table class="noborder centpercent">';
@@ -285,12 +247,19 @@ print '<tr><td>'.$langs->trans("ThirdParty").'</td><td>';
 print img_picto('', 'company', 'class="pictofixedwidth"');
 print $form->select_company($socid, 'socid', '', 1, 0, 0, array(), 0, 'widthcentpercentminusx maxwidth300', '');
 print '</td></tr>';
+// Opportunity status
+if (getDolGlobalString('PROJECT_USE_OPPORTUNITIES')) {
+	print '<tr><td>'.$langs->trans("OpportunityStatusShort").'</td><td>';
+	print $formproject->selectOpportunityStatus('search_opp_status', $search_opp_status, 1, 0, 1, 0, 'maxwidth300', 1, 1);
+	print '</td></tr>';
+}
+
 // User
 /*print '<tr><td>'.$langs->trans("ProjectCommercial").'</td><td>';
 print $form->select_dolusers($userid, 'userid', 1, array(),0,$includeuserlist);
 print '</td></tr>';*/
 // Year
-print '<tr><td>'.$langs->trans("Year").'</td><td>';
+print '<tr><td>'.$langs->trans("Year").' <span class="opacitymedium">('.$langs->trans("DateCreation").')</span></td><td>';
 if (!in_array($year, $arrayyears)) {
 	$arrayyears[$year] = $year;
 }
@@ -298,6 +267,7 @@ if (!in_array($nowyear, $arrayyears)) {
 	$arrayyears[$nowyear] = $nowyear;
 }
 arsort($arrayyears);
+print img_picto('', 'calendar', 'class="pictofixedwidth"');
 print $form->selectarray('year', $arrayyears, $year, 0, 0, 0, '', 0, 0, 0, '', 'width75');
 print '</td></tr>';
 print '<tr><td class="center" colspan="2"><input type="submit" name="submit" class="button small" value="'.$langs->trans("Refresh").'"></td></tr>';
@@ -312,7 +282,7 @@ print '<table class="noborder centpercent">';
 print '<tr class="liste_titre" height="24">';
 print '<td class="center">'.$langs->trans("Year").'</td>';
 print '<td class="right">'.$langs->trans("NbOfProjects").'</td>';
-if (!empty($conf->global->PROJECT_USE_OPPORTUNITIES)) {
+if (getDolGlobalString('PROJECT_USE_OPPORTUNITIES')) {
 	print '<td class="right">'.$langs->trans("OpportunityAmountShort").'</td>';
 	print '<td class="right">'.$langs->trans("OpportunityAmountAverageShort").'</td>';
 	print '<td class="right">'.$langs->trans("OpportunityAmountWeigthedShort").'</td>';
@@ -322,13 +292,13 @@ print '</tr>';
 $oldyear = 0;
 foreach ($data_all_year as $val) {
 	$year = $val['year'];
-	while ($year && $oldyear > $year + 1) {	// If we have empty year
+	while ($year && $oldyear > (int) $year + 1) {	// If we have empty year
 		$oldyear--;
 
 		print '<tr class="oddeven" height="24">';
 		print '<td class="center"><a href="'.$_SERVER["PHP_SELF"].'?year='.$oldyear.($socid > 0 ? '&socid='.$socid : '').($userid > 0 ? '&userid='.$userid : '').'">'.$oldyear.'</a></td>';
 		print '<td class="right">0</td>';
-		if (!empty($conf->global->PROJECT_USE_OPPORTUNITIES)) {
+		if (getDolGlobalString('PROJECT_USE_OPPORTUNITIES')) {
 			print '<td class="right amount nowraponall">0</td>';
 			print '<td class="right amount nowraponall">0</td>';
 			print '<td class="right amount nowraponall">0</td>';
@@ -339,7 +309,7 @@ foreach ($data_all_year as $val) {
 	print '<tr class="oddeven" height="24">';
 	print '<td class="center"><a href="'.$_SERVER["PHP_SELF"].'?year='.$year.($socid > 0 ? '&socid='.$socid : '').($userid > 0 ? '&userid='.$userid : '').'">'.$year.'</a></td>';
 	print '<td class="right">'.$val['nb'].'</td>';
-	if (!empty($conf->global->PROJECT_USE_OPPORTUNITIES)) {
+	if (getDolGlobalString('PROJECT_USE_OPPORTUNITIES')) {
 		print '<td class="right amount nowraponall">'.($val['total'] ? price(price2num($val['total'], 'MT'), 1) : '0').'</td>';
 		print '<td class="right amount nowraponall">'.($val['avg'] ? price(price2num($val['avg'], 'MT'), 1) : '0').'</td>';
 		print '<td class="right amount nowraponall">'.(isset($val['weighted']) ? price(price2num($val['weighted'], 'MT'), 1) : '0').'</td>';
@@ -359,7 +329,7 @@ if ($mesg) {
 } else {
 	$stringtoshow .= $px1->show();
 	$stringtoshow .= "<br>\n";
-	if (!empty($conf->global->PROJECT_USE_OPPORTUNITIES)) {
+	if (getDolGlobalString('PROJECT_USE_OPPORTUNITIES') && $px2 !== null && $px3 !== null) {
 		//$stringtoshow .= $px->show();
 		//$stringtoshow .= "<br>\n";
 		$stringtoshow .= $px2->show();
@@ -373,7 +343,7 @@ print $stringtoshow;
 
 print '</div></div>';
 
-print '<div style="clear:both"></div>';
+print '<div class="clearboth"></div>';
 
 print dol_get_fiche_end();
 

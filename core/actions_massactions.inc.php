@@ -1,9 +1,10 @@
 <?php
-/* Copyright (C) 2015-2017 Laurent Destailleur  <eldy@users.sourceforge.net>
- * Copyright (C) 2018-2021 Nicolas ZABOURI	<info@inovea-conseil.com>
- * Copyright (C) 2018 	   Juanjo Menent  <jmenent@2byte.es>
- * Copyright (C) 2019 	   Ferran Marcet  <fmarcet@2byte.es>
- * Copyright (C) 2019-2021 Frédéric France <frederic.france@netlogic.fr>
+/* Copyright (C) 2015-2025  Laurent Destailleur  	<eldy@users.sourceforge.net>
+ * Copyright (C) 2018-2021  Nicolas ZABOURI	        <info@inovea-conseil.com>
+ * Copyright (C) 2018 	    Juanjo Menent           <jmenent@2byte.es>
+ * Copyright (C) 2019 	    Ferran Marcet           <fmarcet@2byte.es>
+ * Copyright (C) 2019-2025  Frédéric France         <frederic.france@free.fr>
+ * Copyright (C) 2024-2025	MDW						<mdeweerd@users.noreply.github.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,9 +32,59 @@
 // $parameters, $object, $action must be defined for the hook.
 
 // $permissiontoread, $permissiontoadd, $permissiontodelete, $permissiontoclose may be defined
-// $uploaddir may be defined (example to $conf->projet->dir_output."/";)
+// $uploaddir may be defined (example to $conf->project->dir_output."/";)
+// $hidedetails, $hidedesc, $hideref and $moreparams may have been set or not.
 // $toselect may be defined
 // $diroutputmassaction may be defined
+// $confirm
+/**
+ * @var CommonObject $object
+ * @var Conf $conf
+ * @var DoliDB $db
+ * @var ExtraFields $extrafields
+ * @var HookManager $hookmanager
+ * @var Translate $langs
+ * @var User $user
+ *
+ * @var string $dolibarr_main_url_root
+ * @var string $action
+ * @var string $massaction
+ * @var string $confirm
+ * @var ?int[] $toselect
+ * @var ?string $diroutputmassaction
+ * @var string $uploaddir
+ * @var string $objectclass
+ * @var ?string $objectlabel
+ *
+ * @var int $error
+ *
+ * @var ?string $permissiontoadd
+ * @var ?string $permissiontoread
+ * @var ?string $permissiontodelete
+ * @var ?string $permissiontoclose
+ * @var ?string $permissiontoapprove
+ * @var ?string $option
+ * @var int $deliveryreceipt
+ * @var string $month
+ * @var string $year
+ * @var ?string $search_status
+ * @var ?int $hidedetails
+ * @var ?int $hidedesc
+ * @var ?int $hideref
+ * @var ?array<string,mixed> $moreparams
+ */
+'
+@phan-var-force ?string $permissiontoread
+@phan-var-force ?string $permissiontodelete
+@phan-var-force ?string $permissiontoclose
+@phan-var-force ?string $permissiontoapprove
+@phan-var-force ?int[] $toselect
+@phan-var-force ?string $diroutputmassaction
+@phan-var-force ?string $objectlabel
+@phan-var-force ?string $option
+@phan-var-force int $deliveryreceipt
+@phan-var-force ?array<string,mixed> $moreparams
+';
 
 
 // Protection
@@ -41,6 +92,17 @@ if (empty($objectclass) || empty($uploaddir)) {
 	dol_print_error(null, 'include of actions_massactions.inc.php is done but var $objectclass or $uploaddir was not defined');
 	exit;
 }
+if (empty($massaction)) {
+	$massaction = '';
+}
+
+// Note: list of strings for objectclass could be extended to accepted/expected classes
+'
+@phan-var-force "CommonObject"|"CommandeFournisseur"|"ConferenceOrBoothAttendee"|"Contrat"|"Contact"|"Expedition"|"ExpenseReport"|"Facture"|"FactureFournisseur"|"Fichinter"|"Holiday"|"Partnership"|"Project"|"Propal"|"Societe"|"SupplierProposal" $objectclass
+@phan-var-force string $massaction
+@phan-var-force string $uploaddir
+';
+
 
 // For backward compatibility
 if (!empty($permtoread) && empty($permissiontoread)) {
@@ -53,14 +115,13 @@ if (!empty($permtodelete) && empty($permissiontodelete)) {
 	$permissiontodelete = $permtodelete;
 }
 
-
 // Mass actions. Controls on number of lines checked.
-$maxformassaction = (empty($conf->global->MAIN_LIMIT_FOR_MASS_ACTIONS) ? 1000 : $conf->global->MAIN_LIMIT_FOR_MASS_ACTIONS);
-if (!empty($massaction) && is_array($toselect) && count($toselect) < 1) {
+$maxformassaction = getDolGlobalInt('MAIN_LIMIT_FOR_MASS_ACTIONS', 1000);
+if ($massaction && is_array($toselect) && count($toselect) < 1) {
 	$error++;
 	setEventMessages($langs->trans("NoRecordSelected"), null, "warnings");
 }
-if (!$error && is_array($toselect) && count($toselect) > $maxformassaction) {
+if (!$error && isset($toselect) && is_array($toselect) && count($toselect) > $maxformassaction) {
 	setEventMessages($langs->trans('TooManyRecordForMassAction', $maxformassaction), null, 'errors');
 	$error++;
 }
@@ -68,6 +129,7 @@ if (!$error && is_array($toselect) && count($toselect) > $maxformassaction) {
 if (!$error && $massaction == 'confirm_presend' && !GETPOST('sendmail')) {  // If we do not choose button send (for example when we change template or limit), we must not send email, but keep on send email form
 	$massaction = 'presend';
 }
+
 if (!$error && $massaction == 'confirm_presend') {
 	$resaction = '';
 	$nbsent = 0;
@@ -82,46 +144,68 @@ if (!$error && $massaction == 'confirm_presend') {
 	$listofobjectref = array();
 	$contactidtosend = array();
 	$attachedfilesThirdpartyObj = array();
-	$oneemailperrecipient = (GETPOST('oneemailperrecipient', 'int') ? 1 : 0);
+	$oneemailperrecipient = (GETPOSTINT('oneemailperrecipient') ? 1 : 0);
+	$thirdparty = null;
 
 	if (!$error) {
-		$thirdparty = new Societe($db);
-
 		$objecttmp = new $objectclass($db);
+
+		// Define object $thirdparty (Societe or User, Adherent, ConferenceOrBoothAttendee...)
+		$thirdparty = new Societe($db);
 		if ($objecttmp->element == 'expensereport') {
 			$thirdparty = new User($db);
-		}
-		if ($objecttmp->element == 'partnership' && $conf->global->PARTNERSHIP_IS_MANAGED_FOR == 'member') {
+		} elseif ($objecttmp->element == 'contact') {
+			$thirdparty = new Contact($db);
+		} elseif ($objecttmp->element == 'partnership' && getDolGlobalString('PARTNERSHIP_IS_MANAGED_FOR') == 'member') {
 			$thirdparty = new Adherent($db);
-		}
-		if ($objecttmp->element == 'holiday') {
+		} elseif ($objecttmp->element == 'holiday') {
 			$thirdparty = new User($db);
+		} elseif ($objecttmp->element == 'conferenceorboothattendee') {
+			$thirdparty = new ConferenceOrBoothAttendee($db);
 		}
 
 		foreach ($toselect as $toselectid) {
 			$objecttmp = new $objectclass($db); // we must create new instance because instance is saved into $listofobjectref array for future use
+			'@phan-var-force CommonObject $objecttmp';
+			/** @var CommonObject $objecttmp */
 			$result = $objecttmp->fetch($toselectid);
 			if ($result > 0) {
 				$listofobjectid[$toselectid] = $toselectid;
 
-				$thirdpartyid = ($objecttmp->fk_soc ? $objecttmp->fk_soc : $objecttmp->socid);
+				// Set $tmpobjectid that is ID of parent object (thirdparty or user in most cases)
+				$tmpobjectid = ($objecttmp->fk_soc ? $objecttmp->fk_soc : $objecttmp->socid);
 				if ($objecttmp->element == 'societe') {
-					$thirdpartyid = $objecttmp->id;
+					'@phan-var-force Societe $objecttmp';
+					/** @var Societe $objecttmp */
+					$tmpobjectid = $objecttmp->id;
+				} elseif ($objecttmp->element == 'contact') {
+					'@phan-var-force Contact $objecttmp';
+					/** @var Contact $objecttmp */
+					$tmpobjectid = $objecttmp->id;
+				} elseif ($objecttmp->element == 'expensereport') {
+					'@phan-var-force ExpenseReport $objecttmp';
+					/** @var ExpenseReport $objecttmp */
+					$tmpobjectid = $objecttmp->fk_user_author;
+				} elseif ($objecttmp->element == 'partnership' && getDolGlobalString('PARTNERSHIP_IS_MANAGED_FOR') == 'member') {
+					'@phan-var-force Partnership $objecttmp';
+					/** @var Partnership $objecttmp */
+					$tmpobjectid = $objecttmp->fk_member;
+				} elseif ($objecttmp->element == 'holiday') {
+					'@phan-var-force Holiday $objecttmp';
+					/** @var Holiday $objecttmp */
+					$tmpobjectid = $objecttmp->fk_user;
+				} elseif ($objecttmp->element == 'conferenceorboothattendee') {
+					'@phan-var-force ConferenceOrBoothAttendee $objecttmp';
+					/** @var ConferenceOrBoothAttendee $objecttmp */
+					$tmpobjectid = $objecttmp->id;
 				}
-				if ($objecttmp->element == 'expensereport') {
-					$thirdpartyid = $objecttmp->fk_user_author;
-				}
-				if ($objecttmp->element == 'partnership' && $conf->global->PARTNERSHIP_IS_MANAGED_FOR == 'member') {
-					$thirdpartyid = $objecttmp->fk_member;
-				}
-				if ($objecttmp->element == 'holiday') {
-					$thirdpartyid = $objecttmp->fk_user;
-				}
-				if (empty($thirdpartyid)) {
-					$thirdpartyid = 0;
+				if (empty($tmpobjectid)) {
+					$tmpobjectid = 0;
 				}
 
 				if ($objectclass == 'Facture') {
+					'@phan-var-force Facture $objecttmp';
+					/** @var Facture $objecttmp */
 					$tmparraycontact = array();
 					$tmparraycontact = $objecttmp->liste_contact(-1, 'external', 0, 'BILLING');
 					if (is_array($tmparraycontact) && count($tmparraycontact) > 0) {
@@ -129,10 +213,20 @@ if (!$error && $massaction == 'confirm_presend') {
 							$listofobjectcontacts[$toselectid][$data_email['id']] = $data_email['email'];
 						}
 					}
+				} elseif ($objectclass == 'CommandeFournisseur') {
+					'@phan-var-force CommandeFournisseur $objecttmp';
+					/** @var CommandeFournisseur $objecttmp */
+					$tmparraycontact = array();
+					$tmparraycontact = $objecttmp->liste_contact(-1, 'external', 0, 'CUSTOMER');
+					if (is_array($tmparraycontact) && count($tmparraycontact) > 0) {
+						foreach ($tmparraycontact as $data_email) {
+							$listofobjectcontacts[$toselectid][$data_email['id']] = $data_email['email'];
+						}
+					}
 				}
 
-				$listofobjectthirdparties[$thirdpartyid] = $thirdpartyid;
-				$listofobjectref[$thirdpartyid][$toselectid] = $objecttmp;
+				$listofobjectthirdparties[$tmpobjectid] = $tmpobjectid;
+				$listofobjectref[$tmpobjectid][$toselectid] = $objecttmp;
 			}
 		}
 	}
@@ -144,7 +238,7 @@ if (!$error && $massaction == 'confirm_presend') {
 		$massaction = 'presend';
 	}
 
-	$receiver = $_POST['receiver'];
+	$receiver = GETPOST('receiver', 'alphawithlgt');
 	if (!is_array($receiver)) {
 		if (empty($receiver) || $receiver == '-1') {
 			$receiver = array();
@@ -152,9 +246,9 @@ if (!$error && $massaction == 'confirm_presend') {
 			$receiver = array($receiver);
 		}
 	}
-	if (!trim($_POST['sendto']) && count($receiver) == 0 && count($listofobjectthirdparties) == 1) {	// if only one recipient, receiver is mandatory
+	if (!trim(GETPOST('sendto', 'alphawithlgt')) && count($receiver) == 0 && count($listofobjectthirdparties) == 1) {	// if only one recipient, receiver is mandatory
 		$error++;
-		setEventMessages($langs->trans("ErrorFieldRequired", $langs->transnoentitiesnoconv("Recipient")), null, 'warnings');
+		setEventMessages($langs->trans("ErrorFieldRequired", $langs->transnoentitiesnoconv("MailRecipient")), null, 'warnings');
 		$massaction = 'presend';
 	}
 
@@ -164,7 +258,7 @@ if (!$error && $massaction == 'confirm_presend') {
 		$massaction = 'presend';
 	}
 
-	// Loop on each recipient/thirdparty
+	// Loop on each recipient (may be a thirdparty but also a user, a conferenceorboothattendee, ...)
 	if (!$error) {
 		foreach ($listofobjectthirdparties as $thirdpartyid) {
 			$result = $thirdparty->fetch($thirdpartyid);
@@ -176,29 +270,29 @@ if (!$error && $massaction == 'confirm_presend') {
 			$sendto = '';
 			$sendtocc = '';
 			$sendtobcc = '';
-			$sendtoid = array();
+			//$sendtoid = array();
 
 			// Define $sendto
 			$tmparray = array();
-			if (trim($_POST['sendto'])) {
+			if (trim(GETPOST('sendto', 'alphawithlgt'))) {
 				// Recipients are provided into free text
-				$tmparray[] = trim($_POST['sendto']);
+				$tmparray[] = trim(GETPOST('sendto', 'alphawithlgt'));
 			}
-			if (count($receiver) > 0) {
+			if (count($receiver) > 0 && is_object($thirdparty)) {
 				foreach ($receiver as $key => $val) {
 					// Recipient was provided from combo list
 					if ($val == 'thirdparty') { // Id of third party or user
 						$tmparray[] = $thirdparty->name.' <'.$thirdparty->email.'>';
 					} elseif ($val && method_exists($thirdparty, 'contact_get_property')) {		// Id of contact
 						$tmparray[] = $thirdparty->contact_get_property((int) $val, 'email');
-						$sendtoid[] = $val;
+						//$sendtoid[] = $val;
 					}
 				}
 			}
 			$sendto = implode(',', $tmparray);
 
 			// Define $sendtocc
-			$receivercc = $_POST['receivercc'];
+			$receivercc = GETPOST('receivercc', 'alphawithlgt');
 			if (!is_array($receivercc)) {
 				if ($receivercc == '-1') {
 					$receivercc = array();
@@ -207,8 +301,8 @@ if (!$error && $massaction == 'confirm_presend') {
 				}
 			}
 			$tmparray = array();
-			if (trim($_POST['sendtocc'])) {
-				$tmparray[] = trim($_POST['sendtocc']);
+			if (trim(GETPOST('sendtocc', 'alphawithlgt'))) {
+				$tmparray[] = trim(GETPOST('sendtocc', 'alphawithlgt'));
 			}
 			if (count($receivercc) > 0) {
 				foreach ($receivercc as $key => $val) {
@@ -230,19 +324,19 @@ if (!$error && $massaction == 'confirm_presend') {
 
 			foreach ($listofobjectref[$thirdpartyid] as $objectid => $objectobj) {
 				//var_dump($thirdpartyid.' - '.$objectid.' - '.$objectobj->statut);
-				if ($objectclass == 'Propal' && $objectobj->statut == Propal::STATUS_DRAFT) {
+				if ($objectclass == 'Propal' && $objectobj->status == Propal::STATUS_DRAFT) {
 					$langs->load("errors");
 					$nbignored++;
 					$resaction .= '<div class="error">'.$langs->trans('ErrorOnlyProposalNotDraftCanBeSentInMassAction', $objectobj->ref).'</div><br>';
 					continue; // Payment done or started or canceled
 				}
-				if ($objectclass == 'Commande' && $objectobj->statut == Commande::STATUS_DRAFT) {
+				if ($objectclass == 'Commande' && $objectobj->status == Commande::STATUS_DRAFT) {
 					$langs->load("errors");
 					$nbignored++;
 					$resaction .= '<div class="error">'.$langs->trans('ErrorOnlyOrderNotDraftCanBeSentInMassAction', $objectobj->ref).'</div><br>';
 					continue;
 				}
-				if ($objectclass == 'Facture' && $objectobj->statut == Facture::STATUS_DRAFT) {
+				if ($objectclass == 'Facture' && $objectobj->status == Facture::STATUS_DRAFT) {
 					$langs->load("errors");
 					$nbignored++;
 					$resaction .= '<div class="error">'.$langs->trans('ErrorOnlyInvoiceValidatedCanBeSentInMassAction', $objectobj->ref).'</div><br>';
@@ -257,7 +351,11 @@ if (!$error && $massaction == 'confirm_presend') {
 						$fuser = new User($db);
 						$fuser->fetch($objectobj->fk_user_author);
 						$sendto = $fuser->email;
-					} elseif ($objectobj->element == 'partnership' && $conf->global->PARTNERSHIP_IS_MANAGED_FOR == 'member') {
+					} elseif ($objectobj->element == 'contact') {
+						$fcontact = new Contact($db);
+						$fcontact->fetch($objectobj->id);
+						$sendto = $fcontact->email;
+					} elseif ($objectobj->element == 'partnership' && getDolGlobalString('PARTNERSHIP_IS_MANAGED_FOR') == 'member') {
 						$fadherent = new Adherent($db);
 						$fadherent->fetch($objectobj->fk_member);
 						$sendto = $fadherent->email;
@@ -278,6 +376,21 @@ if (!$error && $massaction == 'confirm_presend') {
 						if (count($emails_to_sends) > 0) {
 							$sendto = implode(',', $emails_to_sends);
 						}
+					} elseif ($objectobj->element == 'order_supplier' && !empty($listofobjectcontacts[$objectid])) {
+						$emails_to_sends = array();
+						$objectobj->fetch_thirdparty();
+						$contactidtosend = array();
+						foreach ($listofobjectcontacts[$objectid] as $contactemailid => $contactemailemail) {
+							$emails_to_sends[] = $objectobj->thirdparty->contact_get_property($contactemailid, 'email');
+							if (!in_array($contactemailid, $contactidtosend)) {
+								$contactidtosend[] = $contactemailid;
+							}
+						}
+						if (count($emails_to_sends) > 0) {
+							$sendto = implode(',', $emails_to_sends);
+						}
+					} elseif ($objectobj->element == 'conferenceorboothattendee') {
+						$sendto = $objectobj->email;
 					} else {
 						$objectobj->fetch_thirdparty();
 						$sendto = $objectobj->thirdparty->email;
@@ -286,10 +399,11 @@ if (!$error && $massaction == 'confirm_presend') {
 
 				if (empty($sendto)) {
 					if ($objectobj->element == 'societe') {
-						$objectobj->thirdparty = $objectobj; // Hack so following code is comaptible when objectobj is a thirdparty
+						/** @var Societe $objectobj */
+						$objectobj->thirdparty = $objectobj; // Hack so following code is compatible when objectobj is a thirdparty
 					}
 
-					//print "No recipient for thirdparty ".$objectobj->thirdparty->name;
+					// print "No recipient for thirdparty ".$objectobj->thirdparty->name;
 					$nbignored++;
 					if (empty($thirdpartywithoutemail[$objectobj->thirdparty->id])) {
 						$resaction .= '<div class="error">'.$langs->trans('NoRecipientEmail', $objectobj->thirdparty->name).'</div><br>';
@@ -299,37 +413,59 @@ if (!$error && $massaction == 'confirm_presend') {
 					continue;
 				}
 
-				if ($_POST['addmaindocfile']) {
+				if (GETPOST('addmaindocfile')) {
 					// TODO Use future field $objectobj->fullpathdoc to know where is stored default file
-					// TODO If not defined, use $objectobj->model_pdf (or defaut invoice config) to know what is template to use to regenerate doc.
+					// TODO If not defined, use $objectobj->model_pdf (or default invoice config) to know what is template to use to regenerate doc.
 					$filename = dol_sanitizeFileName($objectobj->ref).'.pdf';
 					$subdir = '';
 					// TODO Set subdir to be compatible with multi levels dir trees
 					// $subdir = get_exdir($objectobj->id, 2, 0, 0, $objectobj, $objectobj->element)
 					$filedir = $uploaddir.'/'.$subdir.dol_sanitizeFileName($objectobj->ref);
-					$file = $filedir.'/'.$filename;
+					$filepath = $filedir.'/'.$filename;
 
 					// For supplier invoices, we use the file provided by supplier, not the one we generate
 					if ($objectobj->element == 'invoice_supplier') {
 						$fileparams = dol_most_recent_file($uploaddir.'/'.get_exdir($objectobj->id, 2, 0, 0, $objectobj, $objectobj->element).$objectobj->ref, preg_quote($objectobj->ref, '/').'([^\-])+');
-						$file = $fileparams['fullname'];
+						$filepath = $fileparams['fullname'];
 					}
 
-					$mime = dol_mimetype($file);
+					// try to find other files generated for this object (last_main_doc)
+					$filename_found = '';
+					$filepath_found = '';
+					$file_check_list = array();
+					$file_check_list[] = array(
+						'name' => $filename,
+						'path' => $filepath,
+					);
+					if (getDolGlobalString('MAIL_MASS_ACTION_ADD_LAST_IF_MAIN_DOC_NOT_FOUND') && !empty($objectobj->last_main_doc)) {
+						$file_check_list[] = array(
+							'name' => basename($objectobj->last_main_doc),
+							'path' => DOL_DATA_ROOT . '/' . $objectobj->last_main_doc,
+						);
+					}
+					foreach ($file_check_list as $file_check_arr) {
+						if (dol_is_file($file_check_arr['path'])) {
+							$filename_found = $file_check_arr['name'];
+							$filepath_found = $file_check_arr['path'];
+							break;
+						}
+					}
 
-					if (dol_is_file($file)) {
+					if ($filepath_found) {
 						// Create form object
 						$attachedfilesThirdpartyObj[$thirdpartyid][$objectid] = array(
-							'paths'=>array($file),
-							'names'=>array($filename),
-							'mimes'=>array($mime)
+							'paths' => array($filepath_found),
+							'names' => array($filename_found),
+							'mimes' => array(dol_mimetype($filepath_found))
 						);
 					} else {
-							$nbignored++;
-							$langs->load("errors");
-							$resaction .= '<div class="error">'.$langs->trans('ErrorCantReadFile', $file).'</div><br>';
-							dol_syslog('Failed to read file: '.$file, LOG_WARNING);
-							continue;
+						$nbignored++;
+						$langs->load("errors");
+						foreach ($file_check_list as $file_check_arr) {
+							$resaction .= '<div class="error">'.$langs->trans('ErrorCantReadFile', $file_check_arr['path']).'</div><br>';
+							dol_syslog('Failed to read file: '.$file_check_arr['path'], LOG_WARNING);
+						}
+						continue;
 					}
 				}
 
@@ -344,28 +480,29 @@ if (!$error && $massaction == 'confirm_presend') {
 			// Send email if there is at least one qualified object for current thirdparty
 			if (count($listofqualifiedobj) > 0) {
 				$langs->load("commercial");
+				$from = '';
 
 				$reg = array();
 				$fromtype = GETPOST('fromtype');
 				if ($fromtype === 'user') {
-					$from = $user->getFullName($langs).' <'.$user->email.'>';
+					$from = dol_string_nospecial($user->getFullName($langs), ' ', array(",")).' <'.$user->email.'>';
 				} elseif ($fromtype === 'company') {
-					$from = $conf->global->MAIN_INFO_SOCIETE_NOM.' <'.$conf->global->MAIN_INFO_SOCIETE_MAIL.'>';
+					$from = getDolGlobalString('MAIN_INFO_SOCIETE_NOM') . ' <' . getDolGlobalString('MAIN_INFO_SOCIETE_MAIL').'>';
 				} elseif (preg_match('/user_aliases_(\d+)/', $fromtype, $reg)) {
 					$tmp = explode(',', $user->email_aliases);
-					$from = trim($tmp[($reg[1] - 1)]);
+					$from = trim($tmp[((int) $reg[1] - 1)]);
 				} elseif (preg_match('/global_aliases_(\d+)/', $fromtype, $reg)) {
-					$tmp = explode(',', $conf->global->MAIN_INFO_SOCIETE_MAIL_ALIASES);
-					$from = trim($tmp[($reg[1] - 1)]);
+					$tmp = explode(',', getDolGlobalString('MAIN_INFO_SOCIETE_MAIL_ALIASES'));
+					$from = trim($tmp[((int) $reg[1] - 1)]);
 				} elseif (preg_match('/senderprofile_(\d+)_(\d+)/', $fromtype, $reg)) {
 					$sql = "SELECT rowid, label, email FROM ".MAIN_DB_PREFIX."c_email_senderprofile WHERE rowid = ".(int) $reg[1];
 					$resql = $db->query($sql);
 					$obj = $db->fetch_object($resql);
 					if ($obj) {
-						$from = $obj->label.' <'.$obj->email.'>';
+						$from = dol_string_nospecial($obj->label, ' ', array(",")).' <'.$obj->email.'>';
 					}
 				} else {
-					$from = $_POST['fromname'].' <'.$_POST['frommail'].'>';
+					$from = GETPOST('fromname').' <'.GETPOST('frommail').'>';
 				}
 
 				$replyto = $from;
@@ -374,25 +511,25 @@ if (!$error && $massaction == 'confirm_presend') {
 
 				$sendtobcc = GETPOST('sendtoccc');
 				if ($objectclass == 'Propal') {
-					$sendtobcc .= (empty($conf->global->MAIN_MAIL_AUTOCOPY_PROPOSAL_TO) ? '' : (($sendtobcc ? ", " : "").$conf->global->MAIN_MAIL_AUTOCOPY_PROPOSAL_TO));
+					$sendtobcc .= (!getDolGlobalString('MAIN_MAIL_AUTOCOPY_PROPOSAL_TO') ? '' : (($sendtobcc ? ", " : "") . getDolGlobalString('MAIN_MAIL_AUTOCOPY_PROPOSAL_TO')));
 				}
 				if ($objectclass == 'Commande') {
-					$sendtobcc .= (empty($conf->global->MAIN_MAIL_AUTOCOPY_ORDER_TO) ? '' : (($sendtobcc ? ", " : "").$conf->global->MAIN_MAIL_AUTOCOPY_ORDER_TO));
+					$sendtobcc .= (!getDolGlobalString('MAIN_MAIL_AUTOCOPY_ORDER_TO') ? '' : (($sendtobcc ? ", " : "") . getDolGlobalString('MAIN_MAIL_AUTOCOPY_ORDER_TO')));
 				}
 				if ($objectclass == 'Facture') {
-					$sendtobcc .= (empty($conf->global->MAIN_MAIL_AUTOCOPY_INVOICE_TO) ? '' : (($sendtobcc ? ", " : "").$conf->global->MAIN_MAIL_AUTOCOPY_INVOICE_TO));
+					$sendtobcc .= (!getDolGlobalString('MAIN_MAIL_AUTOCOPY_INVOICE_TO') ? '' : (($sendtobcc ? ", " : "") . getDolGlobalString('MAIN_MAIL_AUTOCOPY_INVOICE_TO')));
 				}
-				if ($objectclass == 'Supplier_Proposal') {
-					$sendtobcc .= (empty($conf->global->MAIN_MAIL_AUTOCOPY_SUPPLIER_PROPOSAL_TO) ? '' : (($sendtobcc ? ", " : "").$conf->global->MAIN_MAIL_AUTOCOPY_SUPPLIER_PROPOSAL_TO));
+				if ($objectclass == 'SupplierProposal') {
+					$sendtobcc .= (!getDolGlobalString('MAIN_MAIL_AUTOCOPY_SUPPLIER_PROPOSAL_TO') ? '' : (($sendtobcc ? ", " : "") . getDolGlobalString('MAIN_MAIL_AUTOCOPY_SUPPLIER_PROPOSAL_TO')));
 				}
 				if ($objectclass == 'CommandeFournisseur') {
-					$sendtobcc .= (empty($conf->global->MAIN_MAIL_AUTOCOPY_SUPPLIER_ORDER_TO) ? '' : (($sendtobcc ? ", " : "").$conf->global->MAIN_MAIL_AUTOCOPY_SUPPLIER_ORDER_TO));
+					$sendtobcc .= (!getDolGlobalString('MAIN_MAIL_AUTOCOPY_SUPPLIER_ORDER_TO') ? '' : (($sendtobcc ? ", " : "") . getDolGlobalString('MAIN_MAIL_AUTOCOPY_SUPPLIER_ORDER_TO')));
 				}
 				if ($objectclass == 'FactureFournisseur') {
-					$sendtobcc .= (empty($conf->global->MAIN_MAIL_AUTOCOPY_SUPPLIER_INVOICE_TO) ? '' : (($sendtobcc ? ", " : "").$conf->global->MAIN_MAIL_AUTOCOPY_SUPPLIER_INVOICE_TO));
+					$sendtobcc .= (!getDolGlobalString('MAIN_MAIL_AUTOCOPY_SUPPLIER_INVOICE_TO') ? '' : (($sendtobcc ? ", " : "") . getDolGlobalString('MAIN_MAIL_AUTOCOPY_SUPPLIER_INVOICE_TO')));
 				}
 				if ($objectclass == 'Project') {
-					$sendtobcc .= (empty($conf->global->MAIN_MAIL_AUTOCOPY_PROJECT_TO) ? '' : (($sendtobcc ? ", " : "").$conf->global->MAIN_MAIL_AUTOCOPY_PROJECT_TO));
+					$sendtobcc .= (!getDolGlobalString('MAIN_MAIL_AUTOCOPY_PROJECT_TO') ? '' : (($sendtobcc ? ", " : "") . getDolGlobalString('MAIN_MAIL_AUTOCOPY_PROJECT_TO')));
 				}
 
 				// $listofqualifiedobj is array with key = object id and value is instance of qualified objects, for the current thirdparty (but thirdparty property is not loaded yet)
@@ -413,16 +550,21 @@ if (!$error && $massaction == 'confirm_presend') {
 				//var_dump($oneemailperrecipient); var_dump($listofqualifiedobj); var_dump($listofqualifiedref);
 				foreach ($looparray as $objectid => $objecttmp) {		// $objecttmp is a real object or an empty object if we choose to send one email per thirdparty instead of one per object
 					// Make substitution in email content
-					if (!empty($conf->projet->enabled) && method_exists($objecttmp, 'fetch_projet') && is_null($objecttmp->project)) {
-						$objecttmp->fetch_projet();
+					if (isModEnabled('project') && method_exists($objecttmp, 'fetchProject') && is_null($objecttmp->project)) {
+						$objecttmp->fetchProject();
 					}
 					$substitutionarray = getCommonSubstitutionArray($langs, 0, null, $objecttmp);
-					$substitutionarray['__ID__']    = ($oneemailperrecipient ? join(', ', array_keys($listofqualifiedobj)) : $objecttmp->id);
-					$substitutionarray['__REF__']   = ($oneemailperrecipient ? join(', ', $listofqualifiedref) : $objecttmp->ref);
+					$substitutionarray['__ID__']    = ($oneemailperrecipient ? implode(', ', array_keys($listofqualifiedobj)) : $objecttmp->id);
+					$substitutionarray['__REF__']   = ($oneemailperrecipient ? implode(', ', $listofqualifiedref) : $objecttmp->ref);
 					$substitutionarray['__EMAIL__'] = $thirdparty->email;
-					$substitutionarray['__CHECK_READ__'] = '<img src="'.DOL_MAIN_URL_ROOT.'/public/emailing/mailing-read.php?tag='.urlencode($thirdparty->tag).'&securitykey='.urlencode($conf->global->MAILING_EMAIL_UNSUBSCRIBE_KEY).'" width="1" height="1" style="width:1px;height:1px" border="0"/>';
+					$substitutionarray['__CHECK_READ__'] = '<img src="'.DOL_MAIN_URL_ROOT.'/public/emailing/mailing-read.php?tag=undefined&securitykey='.dol_hash(getDolGlobalString('MAILING_EMAIL_UNSUBSCRIBE_KEY')."-undefined", 'md5').'" width="1" height="1" style="width:1px;height:1px" border="0"/>';
 
-					$parameters = array('mode'=>'formemail');
+					if ($oneemailperrecipient) {
+						$substitutionarray['__ONLINE_PAYMENT_URL__'] = '';
+						$substitutionarray['__ONLINE_PAYMENT_TEXT_AND_URL__'] = '';
+					}
+
+					$parameters = array('mode' => 'formemail');
 
 					if (!empty($listofobjectthirdparties)) {
 						$parameters['listofobjectthirdparties'] = $listofobjectthirdparties;
@@ -436,16 +578,16 @@ if (!$error && $massaction == 'confirm_presend') {
 					$subjectreplaced = make_substitutions($subject, $substitutionarray);
 					$messagereplaced = make_substitutions($message, $substitutionarray);
 
-					$attachedfiles = array('paths'=>array(), 'names'=>array(), 'mimes'=>array());
+					$attachedfiles = array('paths' => array(), 'names' => array(), 'mimes' => array());
 					if ($oneemailperrecipient) {
 						// if "one email per recipient" is check we must collate $attachedfiles by thirdparty
-						if (is_array($attachedfilesThirdpartyObj[$thirdparty->id]) && count($attachedfilesThirdpartyObj[$thirdparty->id])) {
+						if (is_array($attachedfilesThirdpartyObj[$thirdparty->id]) && count($attachedfilesThirdpartyObj[$thirdparty->id])) {	// @phpstan-ignore-line
 							foreach ($attachedfilesThirdpartyObj[$thirdparty->id] as $keyObjId => $objAttachedFiles) {
 								// Create form object
 								$attachedfiles = array(
-									'paths'=>array_merge($attachedfiles['paths'], $objAttachedFiles['paths']),
-									'names'=>array_merge($attachedfiles['names'], $objAttachedFiles['names']),
-									'mimes'=>array_merge($attachedfiles['mimes'], $objAttachedFiles['mimes'])
+									'paths' => array_merge($attachedfiles['paths'], $objAttachedFiles['paths']),
+									'names' => array_merge($attachedfiles['names'], $objAttachedFiles['names']),
+									'mimes' => array_merge($attachedfiles['mimes'], $objAttachedFiles['mimes'])
 								);
 							}
 						}
@@ -464,31 +606,28 @@ if (!$error && $massaction == 'confirm_presend') {
 						$trackid = 'thi'.$thirdparty->id;
 						if ($objecttmp->element == 'expensereport') {
 							$trackid = 'use'.$thirdparty->id;
-						}
-						if ($objecttmp->element == 'holiday') {
+						} elseif ($objecttmp->element == 'contact') {
+							$trackid = 'ctc'.$thirdparty->id;
+						} elseif ($objecttmp->element == 'holiday') {
 							$trackid = 'use'.$thirdparty->id;
 						}
 					} else {
 						$trackid = strtolower(get_class($objecttmp));
-						if (get_class($objecttmp) == 'Contrat') {
+						if (get_class($objecttmp) == 'Contact') {
+							$trackid = 'ctc';
+						} elseif (get_class($objecttmp) == 'Contrat') {
 							$trackid = 'con';
-						}
-						if (get_class($objecttmp) == 'Propal') {
+						} elseif (get_class($objecttmp) == 'Propal') {
 							$trackid = 'pro';
-						}
-						if (get_class($objecttmp) == 'Commande') {
+						} elseif (get_class($objecttmp) == 'Commande') {
 							$trackid = 'ord';
-						}
-						if (get_class($objecttmp) == 'Facture') {
+						} elseif (get_class($objecttmp) == 'Facture') {
 							$trackid = 'inv';
-						}
-						if (get_class($objecttmp) == 'Supplier_Proposal') {
+						} elseif (get_class($objecttmp) == 'SupplierProposal') {
 							$trackid = 'spr';
-						}
-						if (get_class($objecttmp) == 'CommandeFournisseur') {
+						} elseif (get_class($objecttmp) == 'CommandeFournisseur') {
 							$trackid = 'sor';
-						}
-						if (get_class($objecttmp) == 'FactureFournisseur') {
+						} elseif (get_class($objecttmp) == 'FactureFournisseur') {
 							$trackid = 'sin';
 						}
 
@@ -502,15 +641,19 @@ if (!$error && $massaction == 'confirm_presend') {
 						$sendcontext = 'standard';
 					}
 
+					// Set tmp user directory (used to convert images embedded as img src=data:image)
+					$vardir = $conf->user->dir_output."/".$user->id;
+					$upload_dir_tmp = $vardir.'/temp'; // TODO Add $keytoavoidconflict in upload_dir path
+
 					// Send mail (substitutionarray must be done just before this)
 					require_once DOL_DOCUMENT_ROOT.'/core/class/CMailFile.class.php';
-					$mailfile = new CMailFile($subjectreplaced, $sendto, $from, $messagereplaced, $filepath, $mimetype, $filename, $sendtocc, $sendtobcc, $deliveryreceipt, -1, '', '', $trackid, '', $sendcontext);
+					$mailfile = new CMailFile($subjectreplaced, (string) $sendto, $from, $messagereplaced, $filepath, $mimetype, $filename, $sendtocc, $sendtobcc, (int) $deliveryreceipt, -1, '', '', $trackid, '', $sendcontext, '', $upload_dir_tmp);
 					if ($mailfile->error) {
 						$resaction .= '<div class="error">'.$mailfile->error.'</div>';
 					} else {
 						$result = $mailfile->sendfile();
-						if ($result) {
-							$resaction .= $langs->trans('MailSuccessfulySent', $mailfile->getValidAddress($from, 2), $mailfile->getValidAddress($sendto, 2)).'<br>'; // Must not contain "
+						if ($result > 0) {
+							$resaction .= $langs->trans('MailSuccessfulySent', $mailfile->getValidAddress($mailfile->addr_from, 2), $mailfile->getValidAddress($mailfile->addr_to, 2)).'<br>'; // Must not contain "
 
 							$error = 0;
 
@@ -525,11 +668,11 @@ if (!$error && $massaction == 'confirm_presend') {
 								/*if ($objectclass == 'Propale') $actiontypecode='AC_PROP';
 								if ($objectclass == 'Commande') $actiontypecode='AC_COM';
 								if ($objectclass == 'Facture') $actiontypecode='AC_FAC';
-								if ($objectclass == 'Supplier_Proposal') $actiontypecode='AC_SUP_PRO';
+								if ($objectclass == 'SupplierProposal') $actiontypecode='AC_SUP_PRO';
 								if ($objectclass == 'CommandeFournisseur') $actiontypecode='AC_SUP_ORD';
 								if ($objectclass == 'FactureFournisseur') $actiontypecode='AC_SUP_INV';*/
 
-								$actionmsg = $langs->transnoentities('MailSentBy').' '.$from.' '.$langs->transnoentities('To').' '.$sendto;
+								$actionmsg = $langs->transnoentities('MailSentByTo', $from, (string) $sendto);
 								if ($message) {
 									if ($sendtocc) {
 										$actionmsg = dol_concatdesc($actionmsg, $langs->transnoentities('Bcc').": ".$sendtocc);
@@ -543,9 +686,12 @@ if (!$error && $massaction == 'confirm_presend') {
 								// Initialisation donnees
 								$objectobj2->sendtoid = (empty($contactidtosend) ? 0 : $contactidtosend);
 								$objectobj2->actionmsg = $actionmsg; // Long text
-								$objectobj2->actionmsg2		= $actionmsg2; // Short text
-								$objectobj2->fk_element		= $objid2;
-								$objectobj2->elementtype	= $objectobj2->element;
+								$objectobj2->actionmsg2 = $actionmsg2; // Short text
+								$objectobj2->fk_element = $objid2;
+								$objectobj2->elementtype = $objectobj2->element;
+								if (getDolGlobalString('MAIN_MAIL_REPLACE_EVENT_TITLE_BY_EMAIL_SUBJECT')) {
+									$objectobj2->actionmsg2 = $subjectreplaced; // Short text
+								}
 
 								$triggername = strtoupper(get_class($objectobj2)).'_SENTBYMAIL';
 								if ($triggername == 'SOCIETE_SENTBYMAIL') {
@@ -572,6 +718,9 @@ if (!$error && $massaction == 'confirm_presend') {
 								if ($triggername == 'SUPPLIERPROPOSAL_SENTBYMAIL') {
 									$triggername = 'PROPOSAL_SUPPLIER_SENTBYMAIL';
 								}
+								if ($triggername == 'PROJET_SENTBYMAIL') {
+									$triggername = 'PROJECT_SENTBYMAIL';
+								}
 
 								if (!empty($triggername)) {
 									// Call trigger
@@ -582,7 +731,7 @@ if (!$error && $massaction == 'confirm_presend') {
 									// End call triggers
 
 									if ($error) {
-										setEventMessages($db->lasterror(), $errors, 'errors');
+										setEventMessages($db->lasterror(), null, 'errors');
 										dol_syslog("Error in trigger ".$triggername.' '.$db->lasterror(), LOG_ERR);
 									}
 								}
@@ -592,12 +741,12 @@ if (!$error && $massaction == 'confirm_presend') {
 						} else {
 							$langs->load("other");
 							if ($mailfile->error) {
-								$resaction .= $langs->trans('ErrorFailedToSendMail', $from, $sendto);
+								$resaction .= $langs->trans('ErrorFailedToSendMail', $from, (string) $sendto);
 								$resaction .= '<br><div class="error">'.$mailfile->error.'</div>';
-							} elseif (!empty($conf->global->MAIN_DISABLE_ALL_MAILS)) {
+							} elseif (getDolGlobalString('MAIN_DISABLE_ALL_MAILS')) {
 								$resaction .= '<div class="warning">No mail sent. Feature is disabled by option MAIN_DISABLE_ALL_MAILS</div>';
 							} else {
-								$resaction .= $langs->trans('ErrorFailedToSendMail', $from, $sendto) . '<br><div class="error">(unhandled error)</div>';
+								$resaction .= $langs->trans('ErrorFailedToSendMail', $from, (string) $sendto) . '<br><div class="error">(unhandled error)</div>';
 							}
 						}
 					}
@@ -612,7 +761,7 @@ if (!$error && $massaction == 'confirm_presend') {
 		$resaction .= $langs->trans("NbSent").': '.($nbsent ? $nbsent : 0)."\n<br>";
 
 		if ($nbsent) {
-			$action = ''; // Do not show form post if there was at least one successfull sent
+			$action = ''; // Do not show form post if there was at least one successful sent
 			//setEventMessages($langs->trans("EMailSentToNRecipients", $nbsent.'/'.count($toselect)), null, 'mesgs');
 			setEventMessages($langs->trans("EMailSentForNElements", $nbsent.'/'.count($toselect)), null, 'mesgs');
 			setEventMessages($resaction, null, 'mesgs');
@@ -626,365 +775,27 @@ if (!$error && $massaction == 'confirm_presend') {
 	}
 }
 
-// TODO Move this action into commande/list.php if called only by this page.
-if ($massaction == 'confirm_createbills') {   // Create bills from orders.
-	$orders = GETPOST('toselect', 'array');
-	$createbills_onebythird = GETPOST('createbills_onebythird', 'int');
-	$validate_invoices = GETPOST('validate_invoices', 'int');
-
-	$errors = array();
-
-	$TFact = array();
-	$TFactThird = array();
-
-	$nb_bills_created = 0;
-	$lastid= 0;
-	$lastref = '';
-
-	$db->begin();
-
-	$nbOrders = is_array($orders) ? count($orders) : 1;
-
-	foreach ($orders as $id_order) {
-		$cmd = new Commande($db);
-		if ($cmd->fetch($id_order) <= 0) {
-			continue;
-		}
-		$cmd->fetch_thirdparty();
-
-		$objecttmp = new Facture($db);
-		if (!empty($createbills_onebythird) && !empty($TFactThird[$cmd->socid])) {
-			// If option "one bill per third" is set, and an invoice for this thirdparty was already created, we re-use it.
-			$objecttmp = $TFactThird[$cmd->socid];
-		} else {
-			// If we want one invoice per order or if there is no first invoice yet for this thirdparty.
-			$objecttmp->socid = $cmd->socid;
-			$objecttmp->type = $objecttmp::TYPE_STANDARD;
-			$objecttmp->cond_reglement_id = !empty($cmd->cond_reglement_id) ? $cmd->cond_reglement_id : $cmd->thirdparty->cond_reglement_id;
-			$objecttmp->mode_reglement_id = !empty($cmd->mode_reglement_id) ? $cmd->mode_reglement_id : $cmd->thirdparty->mode_reglement_id;
-
-			$objecttmp->fk_project = $cmd->fk_project;
-			$objecttmp->multicurrency_code = $cmd->multicurrency_code;
-			if (empty($createbills_onebythird)) {
-				$objecttmp->ref_client = $cmd->ref_client;
-			}
-
-			$datefacture = dol_mktime(12, 0, 0, GETPOST('remonth', 'int'), GETPOST('reday', 'int'), GETPOST('reyear', 'int'));
-			if (empty($datefacture)) {
-				$datefacture = dol_now();
-			}
-
-			$objecttmp->date = $datefacture;
-			$objecttmp->origin    = 'commande';
-			$objecttmp->origin_id = $id_order;
-
-			$objecttmp->array_options = $cmd->array_options; // Copy extrafields
-
-			$res = $objecttmp->create($user);
-
-			if ($res > 0) {
-				$nb_bills_created++;
-				$lastref = $objecttmp->ref;
-				$lastid = $objecttmp->id;
-
-				$TFactThird[$cmd->socid] = $objecttmp;
-			} else {
-				$langs->load("errors");
-				$errors[] = $cmd->ref.' : '.$langs->trans($objecttmp->error);
-				$error++;
-			}
-		}
-
-		if ($objecttmp->id > 0) {
-			$res = $objecttmp->add_object_linked($objecttmp->origin, $id_order);
-
-			if ($res == 0) {
-				$errors[] = $objecttmp->error;
-				$error++;
-			}
-
-			if (!$error) {
-				$lines = $cmd->lines;
-				if (empty($lines) && method_exists($cmd, 'fetch_lines')) {
-					$cmd->fetch_lines();
-					$lines = $cmd->lines;
-				}
-
-				$fk_parent_line = 0;
-				$num = count($lines);
-
-				for ($i = 0; $i < $num; $i++) {
-					$desc = ($lines[$i]->desc ? $lines[$i]->desc : '');
-					// If we build one invoice for several orders, we must put the ref of order on the invoice line
-					if (!empty($createbills_onebythird)) {
-						$desc = dol_concatdesc($desc, $langs->trans("Order").' '.$cmd->ref.' - '.dol_print_date($cmd->date, 'day'));
-					}
-
-					if ($lines[$i]->subprice < 0) {
-						// Negative line, we create a discount line
-						$discount = new DiscountAbsolute($db);
-						$discount->fk_soc = $objecttmp->socid;
-						$discount->amount_ht = abs($lines[$i]->total_ht);
-						$discount->amount_tva = abs($lines[$i]->total_tva);
-						$discount->amount_ttc = abs($lines[$i]->total_ttc);
-						$discount->tva_tx = $lines[$i]->tva_tx;
-						$discount->fk_user = $user->id;
-						$discount->description = $desc;
-						$discountid = $discount->create($user);
-						if ($discountid > 0) {
-							$result = $objecttmp->insert_discount($discountid);
-							//$result=$discount->link_to_invoice($lineid,$id);
-						} else {
-							setEventMessages($discount->error, $discount->errors, 'errors');
-							$error++;
-							break;
-						}
-					} else {
-						// Positive line
-						$product_type = ($lines[$i]->product_type ? $lines[$i]->product_type : 0);
-						// Date start
-						$date_start = false;
-						if ($lines[$i]->date_debut_prevue) {
-							$date_start = $lines[$i]->date_debut_prevue;
-						}
-						if ($lines[$i]->date_debut_reel) {
-							$date_start = $lines[$i]->date_debut_reel;
-						}
-						if ($lines[$i]->date_start) {
-							$date_start = $lines[$i]->date_start;
-						}
-						//Date end
-						$date_end = false;
-						if ($lines[$i]->date_fin_prevue) {
-							$date_end = $lines[$i]->date_fin_prevue;
-						}
-						if ($lines[$i]->date_fin_reel) {
-							$date_end = $lines[$i]->date_fin_reel;
-						}
-						if ($lines[$i]->date_end) {
-							$date_end = $lines[$i]->date_end;
-						}
-						// Reset fk_parent_line for no child products and special product
-						if (($lines[$i]->product_type != 9 && empty($lines[$i]->fk_parent_line)) || $lines[$i]->product_type == 9) {
-							$fk_parent_line = 0;
-						}
-
-						// Extrafields
-						if (method_exists($lines[$i], 'fetch_optionals')) {
-							$lines[$i]->fetch_optionals();
-							$array_options = $lines[$i]->array_options;
-						}
-
-						$objecttmp->context['createfromclone'];
-
-						$rankedLine = ($nbOrders > 1) ? -1 : $lines[$i]->rang;
-
-						$result = $objecttmp->addline(
-							$desc,
-							$lines[$i]->subprice,
-							$lines[$i]->qty,
-							$lines[$i]->tva_tx,
-							$lines[$i]->localtax1_tx,
-							$lines[$i]->localtax2_tx,
-							$lines[$i]->fk_product,
-							$lines[$i]->remise_percent,
-							$date_start,
-							$date_end,
-							0,
-							$lines[$i]->info_bits,
-							$lines[$i]->fk_remise_except,
-							'HT',
-							0,
-							$product_type,
-							//we have define the max rank for each line which makes it possible not to have a duplicate on the rank field in the case of several orders
-							//-1 will give us the right number
-							$rankedLine, // rank
-							$lines[$i]->special_code,
-							$objecttmp->origin,
-							$lines[$i]->rowid,
-							$fk_parent_line,
-							$lines[$i]->fk_fournprice,
-							$lines[$i]->pa_ht,
-							$lines[$i]->label,
-							$array_options,
-							100,
-							0,
-							$lines[$i]->fk_unit
-						);
-						if ($result > 0) {
-							$lineid = $result;
-						} else {
-							$lineid = 0;
-							$error++;
-							break;
-						}
-						// Defined the new fk_parent_line
-						if ($result > 0 && $lines[$i]->product_type == 9) {
-							$fk_parent_line = $result;
-						}
-					}
-				}
-			}
-		}
-
-		//$cmd->classifyBilled($user);        // Disabled. This behavior must be set or not using the workflow module.
-
-		if (!empty($createbills_onebythird) && empty($TFactThird[$cmd->socid])) {
-			$TFactThird[$cmd->socid] = $objecttmp;
-		} else {
-			$TFact[$objecttmp->id] = $objecttmp;
-		}
-	}
-
-	// Build doc with all invoices
-	$TAllFact = empty($createbills_onebythird) ? $TFact : $TFactThird;
-	$toselect = array();
-
-	if (!$error && $validate_invoices) {
-		$massaction = $action = 'builddoc';
-
-		foreach ($TAllFact as &$objecttmp) {
-			$result = $objecttmp->validate($user);
-			if ($result <= 0) {
-				$error++;
-				setEventMessages($objecttmp->error, $objecttmp->errors, 'errors');
-				break;
-			}
-
-			$id = $objecttmp->id; // For builddoc action
-
-			// Builddoc
-			$donotredirect = 1;
-			$upload_dir = $conf->facture->dir_output;
-			$permissiontoadd = $user->rights->facture->creer;
-
-			// Call action to build doc
-			$savobject = $object;
-			$object = $objecttmp;
-			include DOL_DOCUMENT_ROOT.'/core/actions_builddoc.inc.php';
-			$object = $savobject;
-		}
-
-		$massaction = $action = 'confirm_createbills';
-	}
-
-	if (!$error) {
-		$db->commit();
-
-		if ($nb_bills_created == 1) {
-			$texttoshow = $langs->trans('BillXCreated', '{s1}');
-			$texttoshow = str_replace('{s1}', '<a href="'.DOL_URL_ROOT.'/compta/facture/card.php?id='.urlencode($lastid).'">'.$lastref.'</a>', $texttoshow);
-			setEventMessages($texttoshow, null, 'mesgs');
-		} else {
-			setEventMessages($langs->trans('BillCreated', $nb_bills_created), null, 'mesgs');
-		}
-
-		// Make a redirect to avoid to bill twice if we make a refresh or back
-		$param = '';
-		if (!empty($contextpage) && $contextpage != $_SERVER["PHP_SELF"]) {
-			$param .= '&contextpage='.urlencode($contextpage);
-		}
-		if ($limit > 0 && $limit != $conf->liste_limit) {
-			$param .= '&limit='.urlencode($limit);
-		}
-		if ($sall) {
-			$param .= '&sall='.urlencode($sall);
-		}
-		if ($socid > 0) {
-			$param .= '&socid='.urlencode($socid);
-		}
-		if ($search_status != '') {
-			$param .= '&search_status='.urlencode($search_status);
-		}
-		if ($search_orderday) {
-			$param .= '&search_orderday='.urlencode($search_orderday);
-		}
-		if ($search_ordermonth) {
-			$param .= '&search_ordermonth='.urlencode($search_ordermonth);
-		}
-		if ($search_orderyear) {
-			$param .= '&search_orderyear='.urlencode($search_orderyear);
-		}
-		if ($search_deliveryday) {
-			$param .= '&search_deliveryday='.urlencode($search_deliveryday);
-		}
-		if ($search_deliverymonth) {
-			$param .= '&search_deliverymonth='.urlencode($search_deliverymonth);
-		}
-		if ($search_deliveryyear) {
-			$param .= '&search_deliveryyear='.urlencode($search_deliveryyear);
-		}
-		if ($search_ref) {
-			$param .= '&search_ref='.urlencode($search_ref);
-		}
-		if ($search_company) {
-			$param .= '&search_company='.urlencode($search_company);
-		}
-		if ($search_ref_customer) {
-			$param .= '&search_ref_customer='.urlencode($search_ref_customer);
-		}
-		if ($search_user > 0) {
-			$param .= '&search_user='.urlencode($search_user);
-		}
-		if ($search_sale > 0) {
-			$param .= '&search_sale='.urlencode($search_sale);
-		}
-		if ($search_total_ht != '') {
-			$param .= '&search_total_ht='.urlencode($search_total_ht);
-		}
-		if ($search_total_vat != '') {
-			$param .= '&search_total_vat='.urlencode($search_total_vat);
-		}
-		if ($search_total_ttc != '') {
-			$param .= '&search_total_ttc='.urlencode($search_total_ttc);
-		}
-		if ($search_project_ref >= 0) {
-			$param .= "&search_project_ref=".urlencode($search_project_ref);
-		}
-		if ($show_files) {
-			$param .= '&show_files='.urlencode($show_files);
-		}
-		if ($optioncss != '') {
-			$param .= '&optioncss='.urlencode($optioncss);
-		}
-		if ($billed != '') {
-			$param .= '&billed='.urlencode($billed);
-		}
-
-		header("Location: ".$_SERVER['PHP_SELF'].'?'.$param);
-		exit;
-	} else {
-		$db->rollback();
-
-		$action = 'create';
-		$_GET["origin"] = $_POST["origin"];
-		$_GET["originid"] = $_POST["originid"];
-		setEventMessages("Error", null, 'errors');
-		$error++;
-	}
-}
 
 if (!$error && $massaction == 'cancelorders') {
 	$db->begin();
 
 	$nbok = 0;
 
-
-	$orders = GETPOST('toselect', 'array');
+	$orders = GETPOST('toselect', 'array:int');
 	foreach ($orders as $id_order) {
 		$cmd = new Commande($db);
 		if ($cmd->fetch($id_order) <= 0) {
 			continue;
 		}
 
-		if ($cmd->statut != Commande::STATUS_VALIDATED) {
+		if ($cmd->status != Commande::STATUS_VALIDATED) {
 			$langs->load('errors');
 			setEventMessages($langs->trans("ErrorObjectMustHaveStatusValidToBeCanceled", $cmd->ref), null, 'errors');
 			$error++;
 			break;
 		} else {
 			// TODO We do not provide warehouse so no stock change here for the moment.
-			$result = $cmd->cancel();
+			$result = $cmd->cancel($user);
 		}
 
 		if ($result < 0) {
@@ -996,11 +807,7 @@ if (!$error && $massaction == 'cancelorders') {
 		}
 	}
 	if (!$error) {
-		if ($nbok > 1) {
-			setEventMessages($langs->trans("RecordsModified", $nbok), null, 'mesgs');
-		} else {
-			setEventMessages($langs->trans("RecordsModified", $nbok), null, 'mesgs');
-		}
+		setEventMessages($langs->trans("RecordsModified", $nbok), null, 'mesgs');
 		$db->commit();
 	} else {
 		$db->rollback();
@@ -1027,28 +834,40 @@ if (!$error && $massaction == "builddoc" && $permissiontoread && !GETPOST('butto
 		$result = $objecttmp->fetch($toselectid);
 		if ($result > 0) {
 			$listofobjectid[$toselectid] = $toselectid;
-			$thirdpartyid = $objecttmp->fk_soc ? $objecttmp->fk_soc : $objecttmp->socid;
+			$thirdpartyid = !empty($objecttmp->fk_soc) ? $objecttmp->fk_soc : $objecttmp->socid;
 			$listofobjectthirdparties[$thirdpartyid] = $thirdpartyid;
 			$listofobjectref[$toselectid] = $objecttmp->ref;
 		}
 	}
 
 	$arrayofinclusion = array();
-	foreach ($listofobjectref as $tmppdf) {
-		$arrayofinclusion[] = '^'.preg_quote(dol_sanitizeFileName($tmppdf), '/').'\.pdf$';
+	$parameters = array(
+		'listofobjectref' => $listofobjectref,
+		'arrayofinclusion' => &$arrayofinclusion,
+	);
+	$reshook = $hookmanager->executeHooks('updateSearchRegexToMergeDoc', $parameters, $object, $action);
+
+	if (empty($reshook)) {
+		foreach ($listofobjectref as $tmppdf) {
+			$arrayofinclusion[] = '^'.preg_quote(dol_sanitizeFileName($tmppdf), '/').'\.pdf$';
+		}
+		foreach ($listofobjectref as $tmppdf) {
+			$arrayofinclusion[] = '^'.preg_quote(dol_sanitizeFileName($tmppdf), '/').'_[\w\-\'\&\.]+\.pdf$'; // To include PDF generated from ODX files
+		}
 	}
-	foreach ($listofobjectref as $tmppdf) {
-		$arrayofinclusion[] = '^'.preg_quote(dol_sanitizeFileName($tmppdf), '/').'_[a-zA-Z0-9-_]+\.pdf$'; // To include PDF generated from ODX files
-	}
-	$listoffiles = dol_dir_list($uploaddir, 'all', 1, implode('|', $arrayofinclusion), '\.meta$|\.png', 'date', SORT_DESC, 0, true);
+
+	$listoffiles = dol_dir_list($uploaddir, 'all', 1, $arrayofinclusion, '\.meta$|\.png$', 'date', SORT_DESC, 0, 1);
+
+	dol_syslog("Found ".count($listoffiles)." files");
 
 	// build list of files with full path
 	$files = array();
+
 	foreach ($listofobjectref as $basename) {
 		$basename = dol_sanitizeFileName($basename);
 		foreach ($listoffiles as $filefound) {
 			if (strstr($filefound["name"], $basename)) {
-				$files[] = $uploaddir.'/'.$basename.'/'.$filefound["name"];
+				$files[] = $filefound['fullname'];
 				break;
 			}
 		}
@@ -1057,10 +876,10 @@ if (!$error && $massaction == "builddoc" && $permissiontoread && !GETPOST('butto
 	// Define output language (Here it is not used because we do only merging existing PDF)
 	$outputlangs = $langs;
 	$newlang = '';
-	if ($conf->global->MAIN_MULTILANGS && empty($newlang) && GETPOST('lang_id', 'aZ09')) {
+	if (getDolGlobalInt('MAIN_MULTILANGS') /* && empty($newlang) */ && GETPOST('lang_id', 'aZ09')) {
 		$newlang = GETPOST('lang_id', 'aZ09');
 	}
-	//elseif ($conf->global->MAIN_MULTILANGS && empty($newlang) && is_object($objecttmp->thirdparty)) {		// On massaction, we can have several values for $objecttmp->thirdparty
+	//elseif (getDolGlobalInt('MAIN_MULTILANGS') && empty($newlang) && is_object($objecttmp->thirdparty)) {		// On massaction, we can have several values for $objecttmp->thirdparty
 	//	$newlang = $objecttmp->thirdparty->default_lang;
 	//}
 	if (!empty($newlang)) {
@@ -1068,16 +887,16 @@ if (!$error && $massaction == "builddoc" && $permissiontoread && !GETPOST('butto
 		$outputlangs->setDefaultLang($newlang);
 	}
 
-	if (!empty($conf->global->USE_PDFTK_FOR_PDF_CONCAT)) {
+	if (getDolGlobalString('USE_PDFTK_FOR_PDF_CONCAT')) {
 		// Create output dir if not exists
 		dol_mkdir($diroutputmassaction);
 
 		// Defined name of merged file
-		$filename = strtolower(dol_sanitizeFileName($langs->transnoentities($objectlabel)));
+		$filename = strtolower(dol_sanitizeFileName($langs->transnoentities((string) $objectlabel)));
 		$filename = preg_replace('/\s/', '_', $filename);
 
 		// Save merged file
-		if (in_array($objecttmp->element, array('facture', 'facture_fournisseur')) && $search_status == Facture::STATUS_VALIDATED) {
+		if (in_array($objecttmp->element, array('facture', 'invoice_supplier')) && $search_status == Facture::STATUS_VALIDATED) {
 			if ($option == 'late') {
 				$filename .= '_'.strtolower(dol_sanitizeFileName($langs->transnoentities("Unpaid"))).'_'.strtolower(dol_sanitizeFileName($langs->transnoentities("Late")));
 			} else {
@@ -1105,9 +924,7 @@ if (!$error && $massaction == "builddoc" && $permissiontoread && !GETPOST('butto
 
 			// check if pdftk is installed
 			if (file_exists($file)) {
-				if (!empty($conf->global->MAIN_UMASK)) {
-					@chmod($file, octdec($conf->global->MAIN_UMASK));
-				}
+				dolChmod($file);
 
 				$langs->load("exports");
 				setEventMessages($langs->trans('FileSuccessfullyBuilt', $filename.'_'.dol_print_date($now, 'dayhourlog')), null, 'mesgs');
@@ -1132,10 +949,11 @@ if (!$error && $massaction == "builddoc" && $permissiontoread && !GETPOST('butto
 		}
 		$pdf->SetFont(pdf_getPDFFont($outputlangs));
 
-		if (!empty($conf->global->MAIN_DISABLE_PDF_COMPRESSION)) {
+		if (getDolGlobalString('MAIN_DISABLE_PDF_COMPRESSION')) {
 			$pdf->SetCompression(false);
 		}
 
+		$pagecount = 0;
 		// Add all others
 		foreach ($files as $file) {
 			// Charge un document PDF depuis un fichier.
@@ -1152,30 +970,29 @@ if (!$error && $massaction == "builddoc" && $permissiontoread && !GETPOST('butto
 		dol_mkdir($diroutputmassaction);
 
 		// Defined name of merged file
-		$filename = strtolower(dol_sanitizeFileName($langs->transnoentities($objectlabel)));
+		$filename = strtolower(dol_sanitizeFileName($langs->transnoentities((string) $objectlabel)));
 		$filename = preg_replace('/\s/', '_', $filename);
 
+
 		// Save merged file
-		if (in_array($objecttmp->element, array('facture', 'facture_fournisseur')) && $search_status == Facture::STATUS_VALIDATED) {
+		if (in_array($objecttmp->element, array('facture', 'invoice_supplier')) && $search_status == Facture::STATUS_VALIDATED) {
 			if ($option == 'late') {
 				$filename .= '_'.strtolower(dol_sanitizeFileName($langs->transnoentities("Unpaid"))).'_'.strtolower(dol_sanitizeFileName($langs->transnoentities("Late")));
 			} else {
 				$filename .= '_'.strtolower(dol_sanitizeFileName($langs->transnoentities("Unpaid")));
 			}
 		}
-		if ($year) {
+		if (!empty($year)) {
 			$filename .= '_'.$year;
 		}
-		if ($month) {
+		if (!empty($month)) {
 			$filename .= '_'.$month;
 		}
 		if ($pagecount) {
 			$now = dol_now();
 			$file = $diroutputmassaction.'/'.$filename.'_'.dol_print_date($now, 'dayhourlog').'.pdf';
 			$pdf->Output($file, 'F');
-			if (!empty($conf->global->MAIN_UMASK)) {
-				@chmod($file, octdec($conf->global->MAIN_UMASK));
-			}
+			dolChmod($file);
 
 			$langs->load("exports");
 			setEventMessages($langs->trans('FileSuccessfullyBuilt', $filename.'_'.dol_print_date($now, 'dayhourlog')), null, 'mesgs');
@@ -1206,15 +1023,35 @@ if ($action == 'remove_file') {
 if (!$error && $massaction == 'validate' && $permissiontoadd) {
 	$objecttmp = new $objectclass($db);
 
-	if (($objecttmp->element == 'facture' || $objecttmp->element == 'invoice') && !empty($conf->stock->enabled) && !empty($conf->global->STOCK_CALCULATE_ON_BILL)) {
+	if (($objecttmp->element == 'facture' || $objecttmp->element == 'invoice') && isModEnabled('stock') && getDolGlobalString('STOCK_CALCULATE_ON_BILL')) {
 		$langs->load("errors");
 		setEventMessages($langs->trans('ErrorMassValidationNotAllowedWhenStockIncreaseOnAction'), null, 'errors');
 		$error++;
 	}
-	if ($objecttmp->element == 'invoice_supplier' && !empty($conf->stock->enabled) && !empty($conf->global->STOCK_CALCULATE_ON_SUPPLIER_BILL)) {
+	if ($objecttmp->element == 'invoice_supplier' && isModEnabled('stock') && getDolGlobalString('STOCK_CALCULATE_ON_SUPPLIER_BILL')) {
 		$langs->load("errors");
 		setEventMessages($langs->trans('ErrorMassValidationNotAllowedWhenStockIncreaseOnAction'), null, 'errors');
 		$error++;
+	}
+	if ($objecttmp->element == 'facture') {
+		if (!empty($toselect) && getDolGlobalString('INVOICE_CHECK_POSTERIOR_DATE')) {
+			// order $toselect by date
+			$sql  = "SELECT rowid FROM ".MAIN_DB_PREFIX."facture";
+			$sql .= " WHERE rowid IN (".$db->sanitize(implode(",", $toselect)).")";
+			$sql .= " ORDER BY datef";
+
+			$resql = $db->query($sql);
+			if ($resql) {
+				$toselectnew = [];
+				while (!empty($arr = $db->fetch_row($resql))) {
+					$toselectnew[] = $arr[0];
+				}
+				$toselect = (empty($toselectnew)) ? $toselect : $toselectnew;
+			} else {
+				dol_print_error($db);
+				$error++;
+			}
+		}
 	}
 	if (!$error) {
 		$db->begin();
@@ -1223,7 +1060,14 @@ if (!$error && $massaction == 'validate' && $permissiontoadd) {
 		foreach ($toselect as $toselectid) {
 			$result = $objecttmp->fetch($toselectid);
 			if ($result > 0) {
-				$result = $objecttmp->validate($user);
+				if (method_exists($objecttmp, 'validate')) {
+					$result = $objecttmp->validate($user);
+				} elseif (method_exists($objecttmp, 'setValid')) {
+					$result = $objecttmp->setValid($user);
+				} else {
+					$objecttmp->error = 'No method validate or setValid on this object';
+					$result = -1;
+				}
 				if ($result == 0) {
 					$langs->load("errors");
 					setEventMessages($langs->trans("ErrorObjectMustHaveStatusDraftToBeValidated", $objecttmp->ref), null, 'errors');
@@ -1236,14 +1080,19 @@ if (!$error && $massaction == 'validate' && $permissiontoadd) {
 				} else {
 					// validate() rename pdf but do not regenerate
 					// Define output language
-					if (empty($conf->global->MAIN_DISABLE_PDF_AUTOUPDATE)) {
+					if (!getDolGlobalString('MAIN_DISABLE_PDF_AUTOUPDATE')) {
 						$outputlangs = $langs;
 						$newlang = '';
-						if ($conf->global->MAIN_MULTILANGS && empty($newlang) && GETPOST('lang_id', 'aZ09')) {
+						if (getDolGlobalInt('MAIN_MULTILANGS') /* && empty($newlang) */ && GETPOST('lang_id', 'aZ09')) {
 							$newlang = GETPOST('lang_id', 'aZ09');
 						}
-						if ($conf->global->MAIN_MULTILANGS && empty($newlang)) {
-							$newlang = $objecttmp->thirdparty->default_lang;
+						if (getDolGlobalInt('MAIN_MULTILANGS') && empty($newlang) && property_exists($objecttmp, 'thirdparty')) {
+							if ((property_exists($objecttmp, 'socid') || property_exists($objecttmp, 'fk_soc')) && empty($objecttmp->thirdparty)) {
+								$objecttmp->fetch_thirdparty();
+							}
+							if (!empty($objecttmp->thirdparty)) {
+								$newlang = $objecttmp->thirdparty->default_lang;
+							}
 						}
 						if (!empty($newlang)) {
 							$outputlangs = new Translate("", $conf);
@@ -1252,13 +1101,14 @@ if (!$error && $massaction == 'validate' && $permissiontoadd) {
 						}
 						$model = $objecttmp->model_pdf;
 						$ret = $objecttmp->fetch($objecttmp->id); // Reload to get new records
-						// To be sure vars is defined
-						$hidedetails = !empty($hidedetails) ? $hidedetails : (!empty($conf->global->MAIN_GENERATE_DOCUMENTS_HIDE_DETAILS) ? 1 : 0);
-						$hidedesc = !empty($hidedesc) ? $hidedesc : (!empty($conf->global->MAIN_GENERATE_DOCUMENTS_HIDE_DESC) ? 1 : 0);
-						$hideref = !empty($hideref) ? $hideref : (!empty($conf->global->MAIN_GENERATE_DOCUMENTS_HIDE_REF) ? 1 : 0);
-						$moreparams = !empty($moreparams) ? $moreparams : null;
 
-						$result = $objecttmp->generateDocument($model, $outputlangs, $hidedetails, $hidedesc, $hideref);
+						// To be sure vars is defined
+						$hidedetails = isset($hidedetails) ? $hidedetails : (getDolGlobalString('MAIN_GENERATE_DOCUMENTS_HIDE_DETAILS') ? 1 : 0);
+						$hidedesc = isset($hidedesc) ? $hidedesc : (getDolGlobalString('MAIN_GENERATE_DOCUMENTS_HIDE_DESC') ? 1 : 0);
+						$hideref = isset($hideref) ? $hideref : (getDolGlobalString('MAIN_GENERATE_DOCUMENTS_HIDE_REF') ? 1 : 0);
+						$moreparams = isset($moreparams) ? $moreparams : null;
+
+						$result = $objecttmp->generateDocument($model, $outputlangs, $hidedetails, $hidedesc, $hideref, $moreparams);
 						if ($result < 0) {
 							setEventMessages($objecttmp->error, $objecttmp->errors, 'errors');
 						}
@@ -1282,11 +1132,8 @@ if (!$error && $massaction == 'validate' && $permissiontoadd) {
 		} else {
 			$db->rollback();
 		}
-		//var_dump($listofobjectthirdparties);exit;
 	}
 }
-
-//var_dump($_POST);var_dump($massaction);exit;
 
 // Delete record from mass action (massaction = 'delete' for direct delete, action/confirm='delete'/'yes' with a confirmation step before)
 if (!$error && ($massaction == 'delete' || ($action == 'delete' && $confirm == 'yes')) && $permissiontodelete) {
@@ -1294,12 +1141,16 @@ if (!$error && ($massaction == 'delete' || ($action == 'delete' && $confirm == '
 
 	$objecttmp = new $objectclass($db);
 	$nbok = 0;
+	$nbignored = 0;
 	$TMsg = array();
-	foreach ($toselect as $toselectid) {
+
+	//$toselect could contain duplicate entries, cf https://github.com/Dolibarr/dolibarr/issues/26244
+	$unique_arr = array_unique($toselect);
+	foreach ($unique_arr as $toselectid) {
 		$result = $objecttmp->fetch($toselectid);
 		if ($result > 0) {
 			// Refuse deletion for some objects/status
-			if ($objectclass == 'Facture' && empty($conf->global->INVOICE_CAN_ALWAYS_BE_REMOVED) && $objecttmp->status != Facture::STATUS_DRAFT) {
+			if ($objectclass == 'Facture' && $objecttmp->status != Facture::STATUS_DRAFT) {
 				$langs->load("errors");
 				$nbignored++;
 				$TMsg[] = '<div class="error">'.$langs->trans('ErrorOnlyDraftStatusCanBeDeletedInMassAction', $objecttmp->ref).'</div><br>';
@@ -1314,8 +1165,9 @@ if (!$error && ($massaction == 'delete' || ($action == 'delete' && $confirm == '
 			}
 
 			if ($objectclass == 'Holiday' && ! in_array($objecttmp->statut, array(Holiday::STATUS_DRAFT, Holiday::STATUS_CANCELED, Holiday::STATUS_REFUSED))) {
+				$langs->load("errors");
 				$nbignored++;
-				$resaction .= '<div class="error">'.$langs->trans('ErrorLeaveRequestMustBeDraftCanceledOrRefusedToBeDeleted', $objecttmp->ref).'</div><br>';
+				$TMsg[] = '<div class="error">'.$langs->trans('ErrorLeaveRequestMustBeDraftCanceledOrRefusedToBeDeleted', $objecttmp->ref).'</div><br>';
 				continue;
 			}
 
@@ -1329,10 +1181,11 @@ if (!$error && ($massaction == 'delete' || ($action == 'delete' && $confirm == '
 				}
 			}
 
-			if (in_array($objecttmp->element, array('societe', 'member'))) {
+			if ($objecttmp->element == 'societe') {
+				/** @var Societe $objecttmp */
+				'@phan-var-force Societe $objecttmp';
+				// TODO Change signature of delete for Societe
 				$result = $objecttmp->delete($objecttmp->id, $user, 1);
-			} elseif (in_array($objecttmp->element, array('action'))) {
-				$result = $objecttmp->delete();
 			} else {
 				$result = $objecttmp->delete($user);
 			}
@@ -1380,24 +1233,36 @@ if (!$error && ($massaction == 'delete' || ($action == 'delete' && $confirm == '
 // Generate document foreach object according to model linked to object
 // @todo : propose model selection
 if (!$error && $massaction == 'generate_doc' && $permissiontoread) {
+	// Complete with classes that use this massaction
+	<<<'EOPHAN'
+@phan-var-force 'Commande'|'CommandeFournisseur'|'Contrat'|'Expedition'|'ExpenseReport'|'Facture'|'FactureFournisseur'|'Fichinter'|'Project'|'Propal'|'SupplierProposal' $objectclass
+EOPHAN;
+
 	$db->begin();
+	$nbok = 0;
 
 	$objecttmp = new $objectclass($db);
-	$nbok = 0;
+
 	foreach ($toselect as $toselectid) {
+		$objecttmp->thirdparty = null; // Clear if another value was already set by fetch_thirdparty later
 		$result = $objecttmp->fetch($toselectid);
+
 		if ($result > 0) {
 			$outputlangs = $langs;
 			$newlang = '';
 
-			if ($conf->global->MAIN_MULTILANGS && empty($newlang) && GETPOST('lang_id', 'aZ09')) {
+			if (getDolGlobalInt('MAIN_MULTILANGS') /* && empty($newlang) */ && GETPOST('lang_id', 'aZ09')) {
 				$newlang = GETPOST('lang_id', 'aZ09');
 			}
-			if ($conf->global->MAIN_MULTILANGS && empty($newlang) && isset($objecttmp->thirdparty->default_lang)) {
+			if (getDolGlobalInt('MAIN_MULTILANGS') && empty($newlang) && isset($objecttmp->thirdparty->default_lang)) {
 				$newlang = $objecttmp->thirdparty->default_lang; // for proposal, order, invoice, ...
 			}
-			if ($conf->global->MAIN_MULTILANGS && empty($newlang) && isset($objecttmp->default_lang)) {
-				$newlang = $objecttmp->default_lang; // for thirdparty
+			if (getDolGlobalInt('MAIN_MULTILANGS') && empty($newlang) && isset($objecttmp->default_lang)) {
+				$newlang = $objecttmp->default_lang; // for thirdparty @phan-suppress-current-line PhanUndeclaredProperty
+			}
+			if (getDolGlobalInt('MAIN_MULTILANGS') && empty($newlang) && empty($objecttmp->thirdparty)) { //load lang from thirdparty
+				$objecttmp->fetch_thirdparty();
+				$newlang = $objecttmp->thirdparty->default_lang; // for proposal, order, invoice, ...
 			}
 			if (!empty($newlang)) {
 				$outputlangs = new Translate("", $conf);
@@ -1405,18 +1270,10 @@ if (!$error && $massaction == 'generate_doc' && $permissiontoread) {
 			}
 
 			// To be sure vars is defined
-			if (empty($hidedetails)) {
-				$hidedetails = (!empty($conf->global->MAIN_GENERATE_DOCUMENTS_HIDE_DETAILS) ? 1 : 0);
-			}
-			if (empty($hidedesc)) {
-				$hidedesc = (!empty($conf->global->MAIN_GENERATE_DOCUMENTS_HIDE_DESC) ? 1 : 0);
-			}
-			if (empty($hideref)) {
-				$hideref = (!empty($conf->global->MAIN_GENERATE_DOCUMENTS_HIDE_REF) ? 1 : 0);
-			}
-			if (empty($moreparams)) {
-				$moreparams = null;
-			}
+			$hidedetails = isset($hidedetails) ? $hidedetails : (getDolGlobalString('MAIN_GENERATE_DOCUMENTS_HIDE_DETAILS') ? 1 : 0);
+			$hidedesc = isset($hidedesc) ? $hidedesc : (getDolGlobalString('MAIN_GENERATE_DOCUMENTS_HIDE_DESC') ? 1 : 0);
+			$hideref = isset($hideref) ? $hideref : (getDolGlobalString('MAIN_GENERATE_DOCUMENTS_HIDE_REF') ? 1 : 0);
+			$moreparams = isset($moreparams) ? $moreparams : null;
 
 			$result = $objecttmp->generateDocument($objecttmp->model_pdf, $outputlangs, $hidedetails, $hidedesc, $hideref, $moreparams);
 
@@ -1447,28 +1304,28 @@ if (!$error && $massaction == 'generate_doc' && $permissiontoread) {
 }
 
 if (!$error && ($action == 'affecttag' && $confirm == 'yes') && $permissiontoadd) {
+	$nbok = 0;
 	$db->begin();
 
-	$affecttag_type=GETPOST('affecttag_type', 'alpha');
+	$affecttag_type = GETPOST('affecttag_type', 'alpha');
 	if (!empty($affecttag_type)) {
-		$affecttag_type_array=explode(',', $affecttag_type);
+		$affecttag_type_array = explode(',', $affecttag_type);
 	} else {
 		setEventMessage('CategTypeNotFound', 'errors');
 	}
 	if (!empty($affecttag_type_array)) {
-		//check if tag type submited exists into Tag Map categorie class
+		//check if tag type submitted exists into Tag Map categorie class
 		require_once DOL_DOCUMENT_ROOT.'/categories/class/categorie.class.php';
 		$categ = new Categorie($db);
-		$to_affecttag_type_array=array();
-		$categ_type_array=$categ->getMapList();
+		$to_affecttag_type_array = array();
+		$categ_type_array = $categ->getMapList();
 		foreach ($categ_type_array as $categdef) {
-			if (in_array($categdef['code'],  $affecttag_type_array)) {
+			if (in_array($categdef['code'], $affecttag_type_array)) {
 				$to_affecttag_type_array[] = $categdef['code'];
 			}
 		}
 
 		//For each valid categ type set common categ
-		$nbok = 0;
 		if (!empty($to_affecttag_type_array)) {
 			foreach ($to_affecttag_type_array as $categ_type) {
 				$contcats = GETPOST('contcats_' . $categ_type, 'array');
@@ -1494,13 +1351,162 @@ if (!$error && ($action == 'affecttag' && $confirm == 'yes') && $permissiontoadd
 	}
 
 	if (!$error) {
-		if ($nbok > 1) {
-			setEventMessages($langs->trans("RecordsModified", $nbok), null);
+		setEventMessages($langs->trans("RecordsModified", $nbok), null);
+		$db->commit();
+		$toselect = array();
+	} else {
+		$db->rollback();
+	}
+}
+
+if (!$error && ($action == 'updateprice' && $confirm == 'yes') && $permissiontoadd) {
+	'@phan-var-force Product|ProductCustomerPrice $obj';
+	'@phan-var-force Product|ProductCustomerPrice $object';
+	$nbok = 0;
+	$db->begin();
+	if (GETPOSTISSET('pricerate')) {
+		$pricepercentage = GETPOSTINT('pricerate');
+		if ($pricepercentage == 0) {
+			setEventMessages($langs->trans("RecordsModified", 0), null);
 		} else {
+			foreach ($toselect as $toselectid) {
+				$result = $object->fetch($toselectid);
+				//var_dump($contcats);exit;
+				if ($result > 0) {
+					if (getDolGlobalString('PRODUCT_PRICE_UNIQ')
+							|| getDolGlobalString('PRODUIT_CUSTOMER_PRICES')) {
+						if ($object->price_base_type == 'TTC') {
+							$newprice = $object->price_ttc * (100 + $pricepercentage) / 100;
+							$minprice = $object->price_min_ttc;
+						} else {
+							$newprice = $object->price * (100 + $pricepercentage) / 100;
+							$minprice = $object->price_min;
+						}
+						$res = $object->updatePrice($newprice, $object->price_base_type, $user, $object->tva_tx, $minprice, 0, $object->tva_npr, 0, 0, array(), $object->default_vat_code);
+						if ($res > 0) {
+							$nbok++;
+						} else {
+							setEventMessages($object->error, $object->errors, 'errors');
+						}
+					} elseif (getDolGlobalString('PRODUIT_MULTIPRICES')) {
+						$maxlevel = getDolGlobalInt('PRODUIT_MULTIPRICES_LIMIT');
+						for ($level = 1; $level <= $maxlevel; $level++) {
+							if ($object->price_base_type == 'TTC') {
+								$newprice = $object->multiprices_ttc[$level] * (100 + $pricepercentage) / 100;
+								$minprice = $object->multiprices_min_ttc[$level];
+							} else {
+								$newprice = $object->multiprices[$level] * (100 + $pricepercentage) / 100;
+								$minprice = $object->multiprices_min[$level];
+							}
+							$res = $object->updatePrice($newprice, $object->price_base_type, $user, $object->tva_tx, $minprice, $level, $object->tva_npr, 0, 0, array(), $object->default_vat_code);
+							if ($res > 0) {
+								$nbok++;
+							}
+						}
+					}
+				} else {
+					setEventMessages($object->error, $object->errors, 'errors');
+					$error++;
+					break;
+				}
+			}
+		}
+	}
+
+	if (!$error) {
+		if ($nbok > 0) {
 			setEventMessages($langs->trans("RecordsModified", $nbok), null);
 		}
 		$db->commit();
-		$toselect=array();
+		$toselect = array();
+	} else {
+		$db->rollback();
+	}
+}
+
+if (!$error && ($action == 'setsupervisor' && $confirm == 'yes') && $permissiontoadd) {
+	'@phan-var-force User $object';
+	$nbok = 0;
+	$db->begin();
+	$supervisortoset = GETPOSTINT('supervisortoset');
+	if (!empty($supervisortoset)) {
+		foreach ($toselect as $toselectid) {
+			$result = $object->fetch($toselectid);
+			//var_dump($contcats);exit;
+			if ($result > 0) {
+				$object->fk_user = $supervisortoset;
+				$res = $object->update($user);
+				if ($res > 0) {
+					$nbok++;
+				} else {
+					setEventMessages($object->error, $object->errors, 'errors');
+				}
+			} else {
+				setEventMessages($object->error, $object->errors, 'errors');
+				$error++;
+				break;
+			}
+		}
+	} else {
+		setEventMessage('UserNotFound', 'errors');
+		$error++;
+	}
+
+	if (!$error) {
+		setEventMessages($langs->trans("RecordsModified", $nbok), null);
+		$db->commit();
+		$toselect = array();
+	} else {
+		$db->rollback();
+	}
+}
+
+if (!$error && ($action == 'affectuser' && $confirm == 'yes') && $permissiontoadd) {
+	$nbok = 0;
+	$db->begin();
+
+	$usertoaffect = GETPOSTINT('usertoaffect');
+	$projectrole = GETPOST('projectrole');
+	$tasksrole = GETPOST('tasksrole');
+	if (!empty($usertoaffect)) {
+		foreach ($toselect as $toselectid) {
+			$result = $object->fetch($toselectid);
+			//var_dump($contcats);exit;
+			if ($result > 0) {
+				$res = $object->add_contact($usertoaffect, $projectrole, 'internal');
+				if ($res >= 0) {
+					$taskstatic = new Task($db);
+					$task_array = $taskstatic->getTasksArray(null, null, $object->id, 0, 0);
+
+					foreach ($task_array as $task) {
+						$tasksToAffect = new Task($db);
+						$result = $tasksToAffect->fetch($task->id);
+						if ($result > 0) {
+							$res = $tasksToAffect->add_contact($usertoaffect, $tasksrole, 'internal');
+							if ($res < 0) {
+								setEventMessages($tasksToAffect->error, $tasksToAffect->errors, 'errors');
+							}
+						}
+					}
+					$nbok++;
+				} else {
+					setEventMessages($object->error, $object->errors, 'errors');
+				}
+			} else {
+				setEventMessages($object->error, $object->errors, 'errors');
+				$error++;
+				break;
+			}
+		}
+	} else {
+		setEventMessage('UserNotFound', 'errors');
+		$error++;
+	}
+
+	if (!$error) {
+		setEventMessages($langs->trans("RecordsModified", $nbok), null);
+		$db->commit();
+		$toselect = array();
 	} else {
 		$db->rollback();
 	}
@@ -1513,9 +1519,9 @@ if (!$error && ($massaction == 'enable' || ($action == 'enable' && $confirm == '
 	$nbok = 0;
 	foreach ($toselect as $toselectid) {
 		$result = $objecttmp->fetch($toselectid);
-		if ($result>0) {
+		if ($result > 0) {
 			if (in_array($objecttmp->element, array('societe'))) {
-				$result =$objecttmp->setStatut(1);
+				$result = $objecttmp->setStatut(1);
 			}
 			if ($result <= 0) {
 				setEventMessages($objecttmp->error, $objecttmp->errors, 'errors');
@@ -1550,9 +1556,9 @@ if (!$error && ($massaction == 'disable' || ($action == 'disable' && $confirm ==
 	$nbok = 0;
 	foreach ($toselect as $toselectid) {
 		$result = $objecttmp->fetch($toselectid);
-		if ($result>0) {
+		if ($result > 0) {
 			if (in_array($objecttmp->element, array('societe'))) {
-				$result =$objecttmp->setStatut(0);
+				$result = $objecttmp->setStatut(0);
 			}
 			if ($result <= 0) {
 				setEventMessages($objecttmp->error, $objecttmp->errors, 'errors');
@@ -1580,25 +1586,152 @@ if (!$error && ($massaction == 'disable' || ($action == 'disable' && $confirm ==
 	}
 }
 
+if (!$error && $action == 'confirm_edit_value_extrafields' && $confirm == 'yes' && $permissiontoadd) {
+	$db->begin();
+
+	$objecttmp = new $objectclass($db);
+	$e = new ExtraFields($db);// fetch optionals attributes and labels
+	$e->fetch_name_optionals_label($objecttmp->table_element);
+
+	$nbok = 0;
+	$extrafieldKeyToUpdate = GETPOST('extrafield-key-to-update');
+
+
+	foreach ($toselect as $toselectid) {
+		/** @var CommonObject $objecttmp */
+		$objecttmp = new $objectclass($db); // to avoid ghost data
+		$result = $objecttmp->fetch($toselectid);
+		if ($result > 0) {
+			// Fill array 'array_options' with data from add form
+			$ret = $e->setOptionalsFromPost(null, $objecttmp, $extrafieldKeyToUpdate);
+			if ($ret > 0) {
+				$objecttmp->insertExtraFields();
+			} else {
+				$error++;
+				setEventMessages($objecttmp->error, $objecttmp->errors, 'errors');
+			}
+		} else {
+			setEventMessages($objecttmp->error, $objecttmp->errors, 'errors');
+			$error++;
+			break;
+		}
+	}
+
+	if (!$error) {
+		if ($nbok > 1) {
+			setEventMessages($langs->trans("RecordsDisabled", $nbok), null, 'mesgs');
+		} else {
+			setEventMessages($langs->trans("save"), null, 'mesgs');
+		}
+		$db->commit();
+	} else {
+		$db->rollback();
+	}
+}
+
+if (!$error && ($massaction == 'assignsalerepresentative' || ($action == 'assignsalerepresentative' && $confirm == 'yes')) && $permissiontoadd) {
+	$db->begin();
+
+	$objecttmp = new $objectclass($db);
+	$nbok = 0;
+
+	foreach ($toselect as $toselectid) {
+		$result = $objecttmp->fetch($toselectid);
+		if ($result > 0) {
+			if (in_array($objecttmp->element, array('societe'))) {
+				$result = $objecttmp->setSalesRep(GETPOST("commercial", "alpha"));
+			}
+			if ($result <= 0) {
+				setEventMessages($objecttmp->error, $objecttmp->errors, 'errors');
+				$error++;
+				break;
+			} else {
+				$nbok++;
+			}
+		} else {
+			setEventMessages($objecttmp->error, $objecttmp->errors, 'errors');
+			$error++;
+			break;
+		}
+	}
+
+	if (!$error) {
+		if ($nbok > 1) {
+			setEventMessages($langs->trans("CommercialsAffected", $nbok), null, 'mesgs');
+		} else {
+			setEventMessages($langs->trans("CommercialAffected"), null, 'mesgs');
+		}
+		$db->commit();
+	} else {
+		$db->rollback();
+	}
+}
+
+if (!$error && ($massaction == 'unassigncommercial' || ($action == 'unassigncommercial' && $confirm == 'yes')) && $permissiontoadd) {
+	$db->begin();
+
+	$objecttmp = new $objectclass($db);
+	$nbok = 0;
+
+	foreach ($toselect as $toselectid) {
+		$result = $objecttmp->fetch($toselectid);
+		if ($result > 0) {
+			if (in_array($objecttmp->element, array('societe'))) {
+				$TCommercial = GETPOST("commercial", "alpha");
+				if (is_array($TCommercial)) {
+					foreach ($TCommercial as $commercial) {
+						$result = $objecttmp->del_commercial($user, $commercial);
+					}
+				}
+			}
+			if ($result <= 0) {
+				setEventMessages($objecttmp->error, $objecttmp->errors, 'errors');
+				$error++;
+				break;
+			} else {
+				$nbok++;
+			}
+		} else {
+			setEventMessages($objecttmp->error, $objecttmp->errors, 'errors');
+			$error++;
+			break;
+		}
+	}
+
+	if (!$error) {
+		if ($nbok > 1) {
+			setEventMessages($langs->trans("CommercialsDisaffected", $nbok), null, 'mesgs');
+		} else {
+			setEventMessages($langs->trans("CommercialDisaffected"), null, 'mesgs');
+		}
+		$db->commit();
+	} else {
+		$db->rollback();
+	}
+}
 // Approve for leave only
 if (!$error && ($massaction == 'approveleave' || ($action == 'approveleave' && $confirm == 'yes')) && $permissiontoapprove) {
 	$db->begin();
 
 	$objecttmp = new $objectclass($db);
+	'@phan-var-force Holiday $objecttmp';
 	$nbok = 0;
 	foreach ($toselect as $toselectid) {
 		$result = $objecttmp->fetch($toselectid);
 		if ($result > 0) {
-			if ($objecttmp->statut != Holiday::STATUS_VALIDATED) {
+			if ($objecttmp->status != Holiday::STATUS_VALIDATED) {
 				setEventMessages($langs->trans('StatusOfRefMustBe', $objecttmp->ref, $langs->transnoentitiesnoconv('Validated')), null, 'warnings');
 				continue;
 			}
 			if ($user->id == $objecttmp->fk_validator) {
-				$objecttmp->oldcopy = dol_clone($objecttmp);
+				$objecttmp->oldcopy = dol_clone($objecttmp, 2);  // @phan-suppress-current-line PhanTypeMismatchProperty
 
 				$objecttmp->date_valid = dol_now();
 				$objecttmp->fk_user_valid = $user->id;
-				$objecttmp->statut = Holiday::STATUS_APPROVED;
+				$objecttmp->date_approval = dol_now();
+				$objecttmp->fk_user_approve = $user->id;
+				$objecttmp->status = Holiday::STATUS_APPROVED;
+				$objecttmp->statut = $objecttmp->status;	// deprecated
 
 				$verif = $objecttmp->approve($user);
 
@@ -1609,8 +1742,11 @@ if (!$error && ($massaction == 'approveleave' || ($action == 'approveleave' && $
 
 				// If no SQL error, we redirect to the request form
 				if (!$error) {
-					// Calculcate number of days consummed
-					$nbopenedday = num_open_day($objecttmp->date_debut_gmt, $objecttmp->date_fin_gmt, 0, 1, $objecttmp->halfday);
+					$tmpUser = new User($db);
+					$result = $tmpUser->fetch($objecttmp->fk_user);
+
+					// Calculate number of days consumed
+					$nbopenedday = num_open_day($objecttmp->date_debut_gmt, $objecttmp->date_fin_gmt, 0, 1, $objecttmp->halfday, $tmpUser->country_id);
 					$soldeActuel = $objecttmp->getCpforUser($objecttmp->fk_user, $objecttmp->fk_type);
 					$newSolde = ($soldeActuel - $nbopenedday);
 
@@ -1642,12 +1778,12 @@ if (!$error && ($massaction == 'approveleave' || ($action == 'approveleave' && $
 						$expediteur = new User($db);
 						$expediteur->fetch($objecttmp->fk_validator);
 						//$emailFrom = $expediteur->email;		Email of user can be an email into another company. Sending will fails, we must use the generic email.
-						$emailFrom = $conf->global->MAIN_MAIL_EMAIL_FROM;
+						$emailFrom = getDolGlobalString('MAIN_MAIL_EMAIL_FROM');
 
 						// Subject
-						$societeName = $conf->global->MAIN_INFO_SOCIETE_NOM;
-						if (!empty($conf->global->MAIN_APPLICATION_TITLE)) {
-							$societeName = $conf->global->MAIN_APPLICATION_TITLE;
+						$societeName = getDolGlobalString('MAIN_INFO_SOCIETE_NOM');
+						if (getDolGlobalString('MAIN_APPLICATION_TITLE')) {
+							$societeName = getDolGlobalString('MAIN_APPLICATION_TITLE');
 						}
 
 						$subject = $societeName." - ".$langs->transnoentitiesnoconv("HolidaysValidated");
@@ -1700,11 +1836,153 @@ if (!$error && ($massaction == 'approveleave' || ($action == 'approveleave' && $
 	}
 }
 
-$parameters['toselect'] = $toselect;
+if (!$error && ($massaction == 'increaseholiday' || ($action == 'increaseholiday' && $confirm == 'yes')) && $permissiontoapprove && is_array($toselect)) {
+	'@phan-var-force Holiday $holiday';  // Supposing that $holiday is set, it is needed.
+	/** @var Holiday $holiday */
+	$db->begin();
+	$objecttmp = new $objectclass($db);
+	$nbok = 0;
+	$typeholiday = GETPOSTINT('typeholiday');
+	$nbdaysholidays = GETPOSTFLOAT('nbdaysholidays');	// May be 1.5
+
+	if ($nbdaysholidays <= 0) {
+		setEventMessages($langs->trans("WrongAmount"), null, 'errors');
+		$error++;
+	}
+
+	if (!$error) {
+		foreach ($toselect as $toselectid) {
+			$balancecpuser = $objecttmp->getCPforUser($toselectid, $typeholiday);
+			if (!empty($balancecpuser)) {
+				$newnbdaysholidays = $nbdaysholidays + $balancecpuser;
+			} else {
+				$newnbdaysholidays = $nbdaysholidays;
+			}
+			$result = $holiday->addLogCP($user->id, $toselectid, $langs->transnoentitiesnoconv('ManualUpdate'), $newnbdaysholidays, $typeholiday);
+			if ($result <= 0) {
+				setEventMessages($holiday->error, $holiday->errors, 'errors');
+				$error++;
+				break;
+			}
+
+			$objecttmp->updateSoldeCP($toselectid, $newnbdaysholidays, $typeholiday);
+			if ($result > 0) {
+				$nbok++;
+			} else {
+				setEventMessages($langs->trans("ErrorUpdatingUsersCP"), null, 'errors');
+				$error++;
+				break;
+			}
+		}
+	}
+
+	if (!$error) {
+		if ($nbok > 1) {
+			setEventMessages($langs->trans("HolidayRecordsIncreased", $nbok), null, 'mesgs');
+		} elseif ($nbok == 1) {
+			setEventMessages($langs->trans("HolidayRecordIncreased"), null, 'mesgs');
+		}
+		$db->commit();
+		$toselect = array();
+	} else {
+		$db->rollback();
+	}
+}
+
+
+if (!$error && ($massaction == 'clonetasks' || ($action == 'clonetasks' && $confirm == 'yes'))) {	// Test on permission not required here, done later
+	$num = 0;
+
+	include_once DOL_DOCUMENT_ROOT.'/projet/class/task.class.php';
+
+	$origin_task = new Task($db);
+	$clone_task = new Task($db);
+	$newproject = new Project($db);
+	$newproject->fetch(GETPOSTINT('projectid'));
+
+	// Check if current user is contact of the new project (necessary only if project is not public)
+	$iscontactofnewproject = 0;
+	if (empty($newproject->public)) {
+		$tmps = $newproject->getProjectsAuthorizedForUser($user, 0, 1, 0, '(fk_statut:=:1)');	// We check only open project (cloning on closed is not allowed)
+		$tmparray = explode(',', $tmps);
+		if (!in_array($newproject->id, $tmparray)) {
+			$iscontactofnewproject = 1;
+		}
+	}
+
+	// Check permission on new project
+	$permisstiontoadd = false;
+	if ($user->hasRight('project', 'all', 'creer') || ($user->hasRight('project', 'creer') && ($newproject->public || $iscontactofnewproject))) {
+		$permisstiontoadd = true;
+	}
+
+	if ($permisstiontoadd) {
+		foreach (GETPOST('selected') as $task) {
+			$origin_task->fetch($task, '', 0);
+
+			$defaultref = '';
+			$classnamemodtask = getDolGlobalString('PROJECT_TASK_ADDON', 'mod_task_simple');
+			if (getDolGlobalString('PROJECT_TASK_ADDON') && is_readable(DOL_DOCUMENT_ROOT . "/core/modules/project/task/" . getDolGlobalString('PROJECT_TASK_ADDON') . ".php")) {
+				require_once DOL_DOCUMENT_ROOT . "/core/modules/project/task/" . getDolGlobalString('PROJECT_TASK_ADDON') . '.php';
+				$modTask = new $classnamemodtask();
+				'@phan-var-force ModeleNumRefTask $modTask';
+				/** @var ModeleNumRefTask $modTask */
+				$defaultref = $modTask->getNextValue(null, $clone_task);
+			}
+
+			if (!$error) {
+				$clone_task->fk_project = GETPOSTINT('projectid');
+				$clone_task->ref = $defaultref;
+				$clone_task->label = $origin_task->label;
+				$clone_task->description = $origin_task->description;
+				$clone_task->planned_workload = $origin_task->planned_workload;
+				$clone_task->fk_task_parent = $origin_task->fk_task_parent;
+				$clone_task->date_c = dol_now();
+				$clone_task->date_start = $origin_task->date_start;
+				$clone_task->date_end = $origin_task->date_end;
+				$clone_task->progress = $origin_task->progress;
+
+				// Fill array 'array_options' with data from add form
+				$ret = $extrafields->setOptionalsFromPost(null, $clone_task);
+
+				$taskid = $clone_task->create($user);
+
+				if ($taskid > 0) {
+					$result = $clone_task->add_contact(GETPOSTINT("userid"), 'TASKEXECUTIVE', 'internal');
+					$num++;
+				} else {
+					if ($db->lasterrno() == 'DB_ERROR_RECORD_ALREADY_EXISTS') {
+						$langs->load("projects");
+						setEventMessages($langs->trans('NewTaskRefSuggested'), null, 'warnings');
+						$duplicate_code_error = true;
+					} else {
+						setEventMessages($clone_task->error, $clone_task->errors, 'errors');
+					}
+					$action = 'list';
+					$error++;
+				}
+			}
+		}
+
+		if (!$error) {
+			setEventMessages($langs->trans('NumberOfTasksCloned', $num), null, 'mesgs');
+			header("Location: ".DOL_URL_ROOT.'/projet/tasks.php?id='.GETPOSTINT('projectid'));
+			exit();
+		}
+	} else {
+		setEventMessages($langs->trans('NotEnoughPermissions'), null, 'errors');
+	}
+}
+
+if (empty($toselect)) {
+	$toselect = [];
+}
+$parameters['toselect'] = &$toselect;
 $parameters['uploaddir'] = $uploaddir;
 $parameters['massaction'] = $massaction;
 $parameters['diroutputmassaction'] = isset($diroutputmassaction) ? $diroutputmassaction : null;
 
+// @phan-suppress-next-line PhanTypeMismatchArgumentNullable
 $reshook = $hookmanager->executeHooks('doMassActions', $parameters, $object, $action); // Note that $action and $object may have been modified by some hooks
 if ($reshook < 0) {
 	setEventMessages($hookmanager->error, $hookmanager->errors, 'errors');

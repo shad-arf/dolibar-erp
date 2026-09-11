@@ -1,6 +1,6 @@
 <?php
-/* Copyright (C) 2004-2019 Laurent Destailleur  <eldy@users.sourceforge.net>
- * Copyright (C) 2018      Alexandre Spangaro   <aspangaro@open-dsi.fr>
+/* Copyright (C) 2004-2019  Laurent Destailleur     <eldy@users.sourceforge.net>
+ * Copyright (C) 2018-2024  Alexandre Spangaro      <alexandre@inovea-conseil.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -58,12 +58,12 @@ class modAsset extends DolibarrModules
 		// Module label (no space allowed), used if translation string 'ModuleAssetsName' not found (MyModue is name of module).
 		$this->name = preg_replace('/^mod/i', '', get_class($this));
 		// Module description, used if translation string 'ModuleAssetsDesc' not found (MyModue is name of module).
-		$this->description = "Assets module";
+		$this->description = "Fixed asset management";
 		// Used only if file README.md and README-LL.md not found.
-		$this->descriptionlong = "Assets module to manage assets module and depreciation charge on Dolibarr";
+		$this->descriptionlong = "Asset module to manage fixed asset module and depreciation charge";
 
 		// Possible values for version are: 'development', 'experimental', 'dolibarr', 'dolibarr_deprecated' or a version string like 'x.y.z'
-		$this->version = 'development';
+		$this->version = 'experimental';
 		// Key used in llx_const table to save module status enabled/disabled (where ASSETS is value of property name of module in uppercase)
 		$this->const_name = 'MAIN_MODULE_'.strtoupper($this->name);
 		// Name of image file used for this module.
@@ -90,12 +90,11 @@ class modAsset extends DolibarrModules
 		$this->requiredby = array(); // List of module ids to disable if this one is disabled
 		$this->conflictwith = array(); // List of module class names as string this module is in conflict with
 		$this->langfiles = array("assets");
-		$this->phpmin = array(5, 6); // Minimum version of PHP required by module
+		$this->phpmin = array(7, 0); // Minimum version of PHP required by module
 		$this->need_dolibarr_version = array(7, 0); // Minimum version of Dolibarr required by module
-		$this->warnings_activation = array(); // Warning to show when we activate module. array('always'='text') or array('FR'='textfr','ES'='textes'...)
-		$this->warnings_activation_ext = array(); // Warning to show when we activate an external module. array('always'='text') or array('FR'='textfr','ES'='textes'...)
+		$this->warnings_activation = array();
+		$this->warnings_activation_ext = array();
 		//$this->automatic_activation = array('FR'=>'AssetsWasAutomaticallyActivatedBecauseOfYourCountryChoice');
-		//$this->always_enabled = true;								// If true, can't be disabled
 
 		// Constants
 		// List of particular constants to add when module is enabled (key, 'chaine', value, desc, visible, 'current' or 'allentities', deleteonunactive)
@@ -103,9 +102,28 @@ class modAsset extends DolibarrModules
 		//                             1=>array('ASSETS_MYNEWCONST2','chaine','myvalue','This is another constant to add',0, 'current', 1)
 		// );
 		$this->const = array();
+		$this->const[1] = array(
+			"ASSET_DEPRECIATION_DURATION_PER_YEAR",
+			"chaine",
+			"360",
+			"Duration per year to calculate depreciation. In some case, can be 365 days",
+			0,
+			'current',
+			1
+		);
+
+		$this->const[2] = array(
+			"ASSET_ASSET_ADDON",
+			"chaine",
+			"mod_asset_standard",
+			"Name of numbering rules for fixed asset",
+			0,
+			'current',
+			1
+		);
 
 
-		if (!isset($conf->asset) || !isset($conf->asset->enabled)) {
+		if (!isModEnabled('asset')) {
 			$conf->asset = new stdClass();
 			$conf->asset->enabled = 0;
 		}
@@ -114,8 +132,8 @@ class modAsset extends DolibarrModules
 		// Array to add new pages in new tabs
 		$this->tabs = array();
 		// Example:
-		// $this->tabs[] = array('data'=>'objecttype:+tabname1:Title1:mylangfile@assets:$user->rights->assets->read:/asset/mynewtab1.php?id=__ID__');  					// To add a new tab identified by code tabname1
-		// $this->tabs[] = array('data'=>'objecttype:+tabname2:SUBSTITUTION_Title2:mylangfile@assets:$user->rights->othermodule->read:/asset/mynewtab2.php?id=__ID__',  	// To add another new tab identified by code tabname2. Label will be result of calling all substitution functions on 'Title2' key.
+		// $this->tabs[] = array('data'=>'objecttype:+tabname1:Title1:mylangfile@assets:$user->hasRight("assets","read"):/asset/mynewtab1.php?id=__ID__');  					// To add a new tab identified by code tabname1
+		// $this->tabs[] = array('data'=>'objecttype:+tabname2:SUBSTITUTION_Title2:mylangfile@assets:$user->hasRight("othermodule","read"):/asset/mynewtab2.php?id=__ID__',  	// To add another new tab identified by code tabname2. Label will be result of calling all substitution functions on 'Title2' key.
 		// $this->tabs[] = array('data'=>'objecttype:-tabname:NU:conditiontoremove');                                                     										// To remove an existing tab identified by code tabname
 		//
 		// Where objecttype can be
@@ -126,9 +144,9 @@ class modAsset extends DolibarrModules
 		// 'intervention'     to add a tab in intervention view
 		// 'invoice'          to add a tab in customer invoice view
 		// 'invoice_supplier' to add a tab in supplier invoice view
-		// 'member'           to add a tab in fundation member view
+		// 'member'           to add a tab in foundation member view
 		// 'opensurveypoll'	  to add a tab in opensurvey poll view
-		// 'order'            to add a tab in customer order view
+		// 'order'            to add a tab in sales order view
 		// 'order_supplier'   to add a tab in supplier order view
 		// 'payment'		  to add a tab in payment view
 		// 'payment_supplier' to add a tab in supplier payment view
@@ -193,12 +211,28 @@ class modAsset extends DolibarrModules
 		$this->rights[$r][5] = ''; // In php code, permission will be checked by test if ($user->rights->asset->level1->level2)
 
 		$r++;
+		$this->rights[$r][0] = 51004; // Permission id (must not be already used)
+		$this->rights[$r][1] = 'Read asset models'; // Permission label
+		$this->rights[$r][2] = 'r';
+		$this->rights[$r][3] = 0; // Permission by default for new user (0/1)
+		$this->rights[$r][4] = 'model_advance'; // In php code, permission will be checked by test if ($user->rights->asset->level1->level2)
+		$this->rights[$r][5] = 'read'; // In php code, permission will be checked by test if ($user->rights->asset->level1->level2)
+
+		$r++;
 		$this->rights[$r][0] = 51005; // Permission id (must not be already used)
-		$this->rights[$r][1] = 'Setup types of asset'; // Permission label
+		$this->rights[$r][1] = 'Create/Update asset models'; // Permission label
 		$this->rights[$r][2] = 'w';
 		$this->rights[$r][3] = 0; // Permission by default for new user (0/1)
-		$this->rights[$r][4] = 'setup_advance'; // In php code, permission will be checked by test if ($user->rights->asset->level1->level2)
-		$this->rights[$r][5] = ''; // In php code, permission will be checked by test if ($user->rights->asset->level1->level2)
+		$this->rights[$r][4] = 'model_advance'; // In php code, permission will be checked by test if ($user->rights->asset->level1->level2)
+		$this->rights[$r][5] = 'write'; // In php code, permission will be checked by test if ($user->rights->asset->level1->level2)
+
+		$r++;
+		$this->rights[$r][0] = 51006; // Permission id (must not be already used)
+		$this->rights[$r][1] = 'Delete asset models'; // Permission label
+		$this->rights[$r][2] = 'd';
+		$this->rights[$r][3] = 0; // Permission by default for new user (0/1)
+		$this->rights[$r][4] = 'model_advance'; // In php code, permission will be checked by test if ($user->rights->asset->level1->level2)
+		$this->rights[$r][5] = 'delete'; // In php code, permission will be checked by test if ($user->rights->asset->level1->level2)
 
 		// Menus
 		//-------
@@ -207,7 +241,7 @@ class modAsset extends DolibarrModules
 
 	/**
 	 *  Function called when module is enabled.
-	 *  The init function add constants, boxes, permissions and menus (defined in constructor) into Dolibarr database.
+	 *  The init function adds constants, boxes, permissions and menus (defined in constructor) into Dolibarr database.
 	 *  It also creates data directories
 	 *
 	 *  @param      string	$options    Options when enabling module ('', 'noboxes')
@@ -215,6 +249,11 @@ class modAsset extends DolibarrModules
 	 */
 	public function init($options = '')
 	{
+		$result = $this->_load_tables('/install/mysql/', 'asset');
+		if ($result < 0) {
+			return -1; // Do not activate module if error 'not allowed' returned when loading module SQL queries (the _load_table run sql with run_sql with the error allowed parameter set to 'default')
+		}
+
 		// Permissions
 		$this->remove($options);
 

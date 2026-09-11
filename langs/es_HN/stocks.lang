@@ -1,2 +1,2 @@
 # Dolibarr language file - Source file is en_US - stocks
-WarehouseAskWarehouseDuringOrder=Set a warehouse on Sales Orders
+AlwaysShowFullArbo=Display the full path of a warehouse (parent warehouses) on the popup of warehouse links (Warning: This may decrease dramatically performances)

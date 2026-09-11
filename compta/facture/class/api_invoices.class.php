@@ -1,6 +1,10 @@
 <?php
-/* Copyright (C) 2015   Jean-François Ferry     <jfefe@aternatik.fr>
- * Copyright (C) 2020   Thibault FOUCART     	<support@ptibogxiv.net>
+/* Copyright (C) 2015   	Jean-François Ferry     <jfefe@aternatik.fr>
+ * Copyright (C) 2020   	Thibault FOUCART		<support@ptibogxiv.net>
+ * Copyright (C) 2023		Joachim Kueter			<git-jk@bloxera.com>
+ * Copyright (C) 2024-2025  Frédéric France			<frederic.france@free.fr>
+ * Copyright (C) 2024-2025	MDW						<mdeweerd@users.noreply.github.com>
+ * Copyright (C) 2025		Charlene Benke			<charlene@patas-monkey.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +23,8 @@
 use Luracast\Restler\RestException;
 
 require_once DOL_DOCUMENT_ROOT.'/compta/facture/class/facture.class.php';
+require_once DOL_DOCUMENT_ROOT.'/compta/facture/class/facture-rec.class.php';
+
 
 /**
  * API class for invoices
@@ -29,99 +35,115 @@ require_once DOL_DOCUMENT_ROOT.'/compta/facture/class/facture.class.php';
 class Invoices extends DolibarrApi
 {
 	/**
-	 *
-	 * @var array   $FIELDS     Mandatory fields, checked when create and update object
+	 * @var string[]       Mandatory fields, checked when create and update object
 	 */
-	static $FIELDS = array(
+	public static $FIELDS = array(
 		'socid',
 	);
 
 	/**
-	 * @var Facture $invoice {@type Facture}
+	 * @var Facture {@type Facture}
 	 */
-	public $invoice;
+	private $invoice;
+
+	/**
+	 * @var FactureRec {@type FactureRec}
+	 */
+	private $template_invoice;
+
 
 	/**
 	 * Constructor
 	 */
 	public function __construct()
 	{
-		global $db, $conf;
+		global $db;
 		$this->db = $db;
 		$this->invoice = new Facture($this->db);
+		$this->template_invoice = new FactureRec($this->db);
 	}
 
 	/**
 	 * Get properties of a invoice object
 	 *
-	 * Return an array with invoice informations
+	 * Return an array with invoice information
 	 *
-	 * @param 	int 	$id           ID of invoice
-	 * @param   int     $contact_list 0:Return array contains all properties, 1:Return array contains just id
-	 * @return 	array|mixed data without useless information
+	 * @param	int		$id				ID of invoice
+	 * @param   int     $contact_list	0:Return array contains all properties, 1:Return array contains just id, -1: Do not return contacts/adddesses
+	 * @param 	string 	$properties 	Restrict the data returned to these properties. Ignored if empty. Comma separated list of properties names
+	 * @param 	bool 	$withLines 		true or false to display or hide lines
+	 * @return	Object					Object with cleaned properties
 	 *
-	 * @throws 	RestException
+	 * @throws	RestException
 	 */
-	public function get($id, $contact_list = 1)
+	public function get($id, $contact_list = 1, $properties = '', $withLines = true)
 	{
-		return $this->_fetch($id, '', '', $contact_list);
+		$invoice = $this->_fetch($id, '', '', $contact_list);
+
+		if (!$withLines) {
+			unset($invoice->lines);
+		}
+
+		return $this->_filterObjectProperties($invoice, $properties);
 	}
 
 	/**
 	 * Get properties of an invoice object by ref
 	 *
-	 * Return an array with invoice informations
+	 * Return an array with invoice information
 	 *
-	 * @param       string		$ref			Ref of object
-	 * @param       int         $contact_list  0: Returned array of contacts/addresses contains all properties, 1: Return array contains just id
-	 * @return 	array|mixed data without useless information
+	 * @param   string		$ref			Ref of object
+	 * @param   int         $contact_list	0: Returned array of contacts/addresses contains all properties, 1: Return array contains just id, -1: Do not return contacts/adddesses
+	 * @return	Object						Object with cleaned properties
 	 *
 	 * @url GET    ref/{ref}
 	 *
-	 * @throws 	RestException
+	 * @throws	RestException
 	 */
 	public function getByRef($ref, $contact_list = 1)
 	{
-		return $this->_fetch('', $ref, '', $contact_list);
+		return $this->_fetch(0, $ref, '', $contact_list);
 	}
 
 	/**
 	 * Get properties of an invoice object by ref_ext
 	 *
-	 * Return an array with invoice informations
+	 * Return an array with invoice information
 	 *
-	 * @param       string		$ref_ext			External reference of object
-	 * @param       int         $contact_list  0: Returned array of contacts/addresses contains all properties, 1: Return array contains just id
-	 * @return 	array|mixed data without useless information
+	 * @param   string		$ref_ext		External reference of object
+	 * @param   int         $contact_list	0: Returned array of contacts/addresses contains all properties, 1: Return array contains just id, -1: Do not return contacts/adddesses
+	 * @return	Object						Object with cleaned properties
 	 *
 	 * @url GET    ref_ext/{ref_ext}
 	 *
-	 * @throws 	RestException
+	 * @throws	RestException
 	 */
 	public function getByRefExt($ref_ext, $contact_list = 1)
 	{
-		return $this->_fetch('', '', $ref_ext, $contact_list);
+		return $this->_fetch(0, '', $ref_ext, $contact_list);
 	}
 
 	/**
 	 * Get properties of an invoice object
 	 *
-	 * Return an array with invoice informations
+	 * Return an array with invoice information
 	 *
-	 * @param       int         $id            ID of order
-	 * @param		string		$ref			Ref of object
-	 * @param		string		$ref_ext		External reference of object
-	 * @param       int         $contact_list  0: Returned array of contacts/addresses contains all properties, 1: Return array contains just id
-	 * @return 	array|mixed data without useless information
+	 * @param   int         $id				ID of order
+	 * @param	string		$ref			Ref of object
+	 * @param	string		$ref_ext		External reference of object
+	 * @param   int         $contact_list	0: Returned array of contacts/addresses contains all properties, 1: Return array contains just id, -1: Do not return contacts/adddesses
+	 * @return	Object						Object with cleaned properties
 	 *
-	 * @throws 	RestException
+	 * @throws	RestException
 	 */
 	private function _fetch($id, $ref = '', $ref_ext = '', $contact_list = 1)
 	{
-		if (!DolibarrApiAccess::$user->rights->facture->lire) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'lire')) {
+			throw new RestException(403);
 		}
-
+		if (empty($id) && empty($ref)&& empty($ref_ext)) {
+			throw new RestException(400, 'No invoice can be found with no criteria');
+		}
 		$result = $this->invoice->fetch($id, $ref, $ref_ext);
 		if (!$result) {
 			throw new RestException(404, 'Invoice not found');
@@ -134,13 +156,30 @@ class Invoices extends DolibarrApi
 		$this->invoice->remaintopay = price2num($this->invoice->total_ttc - $this->invoice->totalpaid - $this->invoice->totalcreditnotes - $this->invoice->totaldeposits, 'MT');
 
 		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 
+		// Retrieve credit note ids
+		$this->invoice->getListIdAvoirFromInvoice();
+
 		// Add external contacts ids
-		$this->invoice->contacts_ids = $this->invoice->liste_contact(-1, 'external', $contact_list);
+		if ($contact_list > -1) {
+			$tmparray = $this->invoice->liste_contact(-1, 'external', $contact_list);
+			if (is_array($tmparray)) {
+				$this->invoice->contacts_ids = $tmparray;
+			}
+			$tmparray = $this->invoice->liste_contact(-1, 'internal', $contact_list);
+			if (is_array($tmparray)) {
+				$this->invoice->contacts_ids = $tmparray;
+			}
+		}
 
 		$this->invoice->fetchObjectLinked();
+
+		// Add online_payment_url, copied from order
+		require_once DOL_DOCUMENT_ROOT.'/core/lib/payments.lib.php';
+		$this->invoice->online_payment_url = getOnlinePaymentUrl(0, 'invoice', $this->invoice->ref);
+
 		return $this->_cleanObjectDatas($this->invoice);
 	}
 
@@ -149,59 +188,57 @@ class Invoices extends DolibarrApi
 	 *
 	 * Get a list of invoices
 	 *
-	 * @param string	$sortfield	      Sort field
-	 * @param string	$sortorder	      Sort order
-	 * @param int		$limit		      Limit for list
-	 * @param int		$page		      Page number
-	 * @param string   	$thirdparty_ids	  Thirdparty ids to filter orders of (example '1' or '1,2,3') {@pattern /^[0-9,]*$/i}
-	 * @param string	$status		      Filter by invoice status : draft | unpaid | paid | cancelled
-	 * @param string    $sqlfilters       Other criteria to filter answers separated by a comma. Syntax example "(t.ref:like:'SO-%') and (t.date_creation:<:'20160101')"
-	 * @return array                      Array of invoice objects
+	 * @param string	$sortfield		  	Sort field
+	 * @param string	$sortorder		  	Sort order
+	 * @param int		$limit			  	Limit for list
+	 * @param int		$page			  	Page number
+	 * @param string	$thirdparty_ids	  	Thirdparty ids to filter orders of (example '1' or '1,2,3') {@pattern /^[0-9,]*$/i}
+	 * @param string	$status			  	Filter by invoice status : draft | unpaid | paid | cancelled
+	 * @param string    $sqlfilters       	Other criteria to filter answers separated by a comma. Syntax example "(t.ref:like:'SO-%') and (t.date_creation:<:'20160101')"
+	 * @param string    $properties	      	Restrict the data returned to these properties. Ignored if empty. Comma separated list of properties names
+	 * @param bool      $pagination_data  	If this parameter is set to true the response will include pagination data. Default value is false. Page starts from 0
+	 * @param int		$loadlinkedobjects	Load also linked object
+	 * @param bool 		$withLines 			true or false to display or hide lines
+	 * @return array                      	Array of invoice objects
+	 * @phan-return Facture[]|array{data:Facture[],pagination:array{total:int,page:int,page_count:int,limit:int}}
+	 * @phpstan-return Facture[]|array{data:Facture[],pagination:array{total:int,page:int,page_count:int,limit:int}}
 	 *
 	 * @throws RestException 404 Not found
 	 * @throws RestException 503 Error
 	 */
-	public function index($sortfield = "t.rowid", $sortorder = 'ASC', $limit = 100, $page = 0, $thirdparty_ids = '', $status = '', $sqlfilters = '')
+	public function index($sortfield = "t.rowid", $sortorder = 'ASC', $limit = 100, $page = 0, $thirdparty_ids = '', $status = '', $sqlfilters = '', $properties = '', $pagination_data = false, $loadlinkedobjects = 0, $withLines = true)
 	{
-		global $db, $conf;
-
-		if (!DolibarrApiAccess::$user->rights->facture->lire) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'lire')) {
+			throw new RestException(403);
 		}
 
 		$obj_ret = array();
 
 		// case of external user, $thirdparty_ids param is ignored and replaced by user's socid
-		$socids = DolibarrApiAccess::$user->socid ? DolibarrApiAccess::$user->socid : $thirdparty_ids;
+		$socids = DolibarrApiAccess::$user->socid ?: $thirdparty_ids;
 
 		// If the internal user must only see his customers, force searching by him
 		$search_sale = 0;
-		if (!DolibarrApiAccess::$user->rights->societe->client->voir && !$socids) {
+		if (!DolibarrApiAccess::$user->hasRight('societe', 'client', 'voir') && !$socids) {
 			$search_sale = DolibarrApiAccess::$user->id;
 		}
 
 		$sql = "SELECT t.rowid";
-		if ((!DolibarrApiAccess::$user->rights->societe->client->voir && !$socids) || $search_sale > 0) {
-			$sql .= ", sc.fk_soc, sc.fk_user"; // We need these fields in order to filter by sale (including the case where the user can only see his prospects)
-		}
-		$sql .= " FROM ".MAIN_DB_PREFIX."facture as t";
-
-		if ((!DolibarrApiAccess::$user->rights->societe->client->voir && !$socids) || $search_sale > 0) {
-			$sql .= ", ".MAIN_DB_PREFIX."societe_commerciaux as sc"; // We need this table joined to the select in order to filter by sale
-		}
-
+		$sql .= " FROM ".MAIN_DB_PREFIX."facture AS t";
+		$sql .= " INNER JOIN ".MAIN_DB_PREFIX."societe AS s ON (s.rowid = t.fk_soc)";
+		$sql .= " LEFT JOIN ".MAIN_DB_PREFIX."facture_extrafields AS ef ON (ef.fk_object = t.rowid)"; // Modification VMR Global Solutions to include extrafields as search parameters in the API GET call, so we will be able to filter on extrafields
 		$sql .= ' WHERE t.entity IN ('.getEntity('invoice').')';
-		if ((!DolibarrApiAccess::$user->rights->societe->client->voir && !$socids) || $search_sale > 0) {
-			$sql .= " AND t.fk_soc = sc.fk_soc";
-		}
 		if ($socids) {
 			$sql .= " AND t.fk_soc IN (".$this->db->sanitize($socids).")";
 		}
-
-		if ($search_sale > 0) {
-			$sql .= " AND t.rowid = sc.fk_soc"; // Join for the needed table to filter by sale
+		// Search on sale representative
+		if ($search_sale && $search_sale != '-1') {
+			if ($search_sale == -2) {
+				$sql .= " AND NOT EXISTS (SELECT sc.fk_soc FROM ".MAIN_DB_PREFIX."societe_commerciaux as sc WHERE sc.fk_soc = t.fk_soc)";
+			} elseif ($search_sale > 0) {
+				$sql .= " AND EXISTS (SELECT sc.fk_soc FROM ".MAIN_DB_PREFIX."societe_commerciaux as sc WHERE sc.fk_soc = t.fk_soc AND sc.fk_user = ".((int) $search_sale).")";
+			}
 		}
-
 		// Filter by status
 		if ($status == 'draft') {
 			$sql .= " AND t.fk_statut IN (0)";
@@ -215,19 +252,17 @@ class Invoices extends DolibarrApi
 		if ($status == 'cancelled') {
 			$sql .= " AND t.fk_statut IN (3)";
 		}
-		// Insert sale filter
-		if ($search_sale > 0) {
-			$sql .= " AND sc.fk_user = ".((int) $search_sale);
-		}
 		// Add sql filters
 		if ($sqlfilters) {
 			$errormessage = '';
-			if (!DolibarrApi::_checkFilters($sqlfilters, $errormessage)) {
-				throw new RestException(503, 'Error when validating parameter sqlfilters -> '.$errormessage);
+			$sql .= forgeSQLFromUniversalSearchCriteria($sqlfilters, $errormessage);
+			if ($errormessage) {
+				throw new RestException(400, 'Error when validating parameter sqlfilters -> '.$errormessage);
 			}
-			$regexstring = '\(([^:\'\(\)]+:[^:\'\(\)]+:[^\(\)]+)\)';
-			$sql .= " AND (".preg_replace_callback('/'.$regexstring.'/', 'DolibarrApi::_forge_criteria_callback', $sqlfilters).")";
 		}
+
+		//this query will return total invoices with the filters given
+		$sqlTotals = str_replace('SELECT t.rowid', 'SELECT count(t.rowid) as total', $sql);
 
 		$sql .= $this->db->order($sortfield, $sortorder);
 		if ($limit) {
@@ -247,45 +282,110 @@ class Invoices extends DolibarrApi
 			while ($i < $min) {
 				$obj = $this->db->fetch_object($result);
 				$invoice_static = new Facture($this->db);
-				if ($invoice_static->fetch($obj->rowid)) {
+				if ($invoice_static->fetch($obj->rowid) > 0) {
 					// Get payment details
 					$invoice_static->totalpaid = $invoice_static->getSommePaiement();
 					$invoice_static->totalcreditnotes = $invoice_static->getSumCreditNotesUsed();
 					$invoice_static->totaldeposits = $invoice_static->getSumDepositsUsed();
 					$invoice_static->remaintopay = price2num($invoice_static->total_ttc - $invoice_static->totalpaid - $invoice_static->totalcreditnotes - $invoice_static->totaldeposits, 'MT');
 
-					// Add external contacts ids
-					$invoice_static->contacts_ids = $invoice_static->liste_contact(-1, 'external', 1);
+					// Retrieve credit note ids
+					$invoice_static->getListIdAvoirFromInvoice();
 
-					$obj_ret[] = $this->_cleanObjectDatas($invoice_static);
+					// Add external contacts ids
+					$tmparray = $invoice_static->liste_contact(-1, 'external', 1);
+					if (is_array($tmparray)) {
+						$invoice_static->contacts_ids = $tmparray;
+					}
+
+					if ($loadlinkedobjects) {
+						// retrieve linked objects
+						$invoice_static->fetchObjectLinked();
+					}
+
+					if (!$withLines) {
+						unset($invoice_static->lines);
+					}
+
+					// Add online_payment_url, copied from order
+					require_once DOL_DOCUMENT_ROOT.'/core/lib/payments.lib.php';
+					$invoice_static->online_payment_url = getOnlinePaymentUrl(0, 'invoice', $invoice_static->ref);
+
+					$obj_ret[] = $this->_filterObjectProperties($this->_cleanObjectDatas($invoice_static), $properties);
 				}
 				$i++;
 			}
 		} else {
 			throw new RestException(503, 'Error when retrieve invoice list : '.$this->db->lasterror());
 		}
-		if (!count($obj_ret)) {
-			throw new RestException(404, 'No invoice found');
+
+		//if $pagination_data is true the response will contain element data with all values and element pagination with pagination data(total,page,limit)
+		if ($pagination_data) {
+			$totalsResult = $this->db->query($sqlTotals);
+			$total = $this->db->fetch_object($totalsResult)->total;
+
+			$tmp = $obj_ret;
+			$obj_ret = [];
+
+			$obj_ret['data'] = $tmp;
+			$obj_ret['pagination'] = [
+				'total' => (int) $total,
+				'page' => $page, //count starts from 0
+				'page_count' => ceil((int) $total / $limit),
+				'limit' => $limit
+			];
 		}
+
 		return $obj_ret;
 	}
 
 	/**
 	 * Create invoice object
 	 *
-	 * @param array $request_data   Request datas
+	 * @param array $request_data   Request data
+	 * @phan-param ?array<string,string> $request_data
+	 * @phpstan-param ?array<string,string> $request_data
 	 * @return int                  ID of invoice
 	 */
 	public function post($request_data = null)
 	{
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
-			throw new RestException(401, "Insuffisant rights");
+		global $conf;
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
+			throw new RestException(403, "Insufficiant rights");
 		}
-		// Check mandatory fields
-		$result = $this->_validate($request_data);
+
+		if (!is_array($request_data)) {
+			$request_data = array();
+		}
+
+		// Check mandatory fields (not using output, only possible exception is important)
+		$this->_validate($request_data);
+
+		// Check thirdparty validity
+		$socid = (int) $request_data['socid'];
+		$thirdpartytmp = new Societe($this->db);
+		$thirdparty_result = $thirdpartytmp->fetch($socid);
+		if ($thirdparty_result < 1) {
+			throw new RestException(404, 'Thirdparty with id='.$socid.' not found or not allowed');
+		}
+		if (!DolibarrApi::_checkAccessToResource('societe', $thirdpartytmp->id)) {
+			throw new RestException(404, 'Thirdparty with id='.$thirdpartytmp->id.' not found or not allowed');
+		}
 
 		foreach ($request_data as $field => $value) {
-			$this->invoice->$field = $value;
+			if ($field === 'caller') {
+				// Add a mention of caller so on trigger called after action, we can filter to avoid a loop if we try to sync back again with the caller
+				$this->invoice->context['caller'] = sanitizeVal($request_data['caller'], 'aZ09');
+				continue;
+			}
+			if ($field == 'id') {
+				throw new RestException(400, 'Creating with id field is forbidden');
+			}
+			if ($field == 'entity' && ((int) $value) != ((int) $conf->entity)) {
+				throw new RestException(403, 'Creating with entity='.((int) $value).' MUST be the same entity='.((int) $conf->entity).' as your API user/key belongs to');
+			}
+
+			$this->invoice->$field = $this->_checkValForAPI($field, $value, $this->invoice);
 		}
 		if (!array_key_exists('date', $request_data)) {
 			$this->invoice->date = dol_now();
@@ -302,36 +402,38 @@ class Invoices extends DolibarrApi
 		if ($this->invoice->create(DolibarrApiAccess::$user, 0, (empty($request_data["date_lim_reglement"]) ? 0 : $request_data["date_lim_reglement"])) < 0) {
 			throw new RestException(500, "Error creating invoice", array_merge(array($this->invoice->error), $this->invoice->errors));
 		}
-		return $this->invoice->id;
+		return ((int) $this->invoice->id);
 	}
 
-	 /**
-	  * Create an invoice using an existing order.
-	  *
-	  *
-	  * @param int   $orderid       Id of the order
-	  *
-	  * @url     POST /createfromorder/{orderid}
-	  *
-	  * @return int
-	  * @throws RestException 400
-	  * @throws RestException 401
-	  * @throws RestException 404
-	  * @throws RestException 405
-	  */
+	/**
+	 * Create an invoice using an existing order.
+	 *
+	 * @param int   $orderid       Id of the order
+	 * @return	Object				Object with cleaned properties
+	 *
+	 * @url     POST /createfromorder/{orderid}
+	 *
+	 * @throws RestException 400
+	 * @throws RestException 401
+	 * @throws RestException 403		Access not allowed for login
+	 * @throws RestException 404
+	 * @throws RestException 405
+	 */
 	public function createInvoiceFromOrder($orderid)
 	{
-
 		require_once DOL_DOCUMENT_ROOT.'/commande/class/commande.class.php';
 
-		if (!DolibarrApiAccess::$user->rights->commande->lire) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('commande', 'lire')) {
+			throw new RestException(403);
 		}
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
+			throw new RestException(403);
 		}
 		if (empty($orderid)) {
 			throw new RestException(400, 'Order ID is mandatory');
+		}
+		if (!DolibarrApi::_checkAccessToResource('commande', $orderid)) {
+			throw new RestException(403, 'Access not allowed on order for login '.DolibarrApiAccess::$user->login);
 		}
 
 		$order = new Commande($this->db);
@@ -349,18 +451,60 @@ class Invoices extends DolibarrApi
 	}
 
 	/**
+	 * Create an invoice using a contract.
+	 *
+	 * @param int   $contractid       Id of the contract
+	 * @return     Object                          Object with cleaned properties
+	 *
+	 * @url     POST /createfromcontract/{contractid}
+	 *
+	 * @throws RestException 400
+	 * @throws RestException 401
+	 * @throws RestException 404
+	 * @throws RestException 405
+	 */
+	public function createInvoiceFromContract($contractid)
+	{
+		require_once DOL_DOCUMENT_ROOT.'/contrat/class/contrat.class.php';
+
+		if (!DolibarrApiAccess::$user->hasRight('contrat', 'lire')) {
+			throw new RestException(403);
+		}
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
+			throw new RestException(403);
+		}
+		if (empty($contractid)) {
+			throw new RestException(400, 'Contract ID is mandatory');
+		}
+
+		$contract = new Contrat($this->db);
+		$result = $contract->fetch($contractid);
+		if (!$result) {
+			throw new RestException(404, 'Contract not found');
+		}
+
+		$result = $this->invoice->createFromContract($contract, DolibarrApiAccess::$user);
+		if ($result < 0) {
+			throw new RestException(405, $this->invoice->error);
+		}
+		$this->invoice->fetchObjectLinked();
+		return $this->_cleanObjectDatas($this->invoice);
+	}
+
+	/**
 	 * Get lines of an invoice
 	 *
-	 * @param int   $id             Id of invoice
+	 * @param	int   $id				Id of invoice
+	 * @return	array					Array of lines
+	 * @phan-return CommonInvoiceLine[]
+	 * @phpstan-return CommonInvoiceLine[]
 	 *
 	 * @url	GET {id}/lines
-	 *
-	 * @return int
 	 */
 	public function getLines($id)
 	{
-		if (!DolibarrApiAccess::$user->rights->facture->lire) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'lire')) {
+			throw new RestException(403);
 		}
 
 		$result = $this->invoice->fetch($id);
@@ -369,7 +513,7 @@ class Invoices extends DolibarrApi
 		}
 
 		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 		$this->invoice->getLinesArray();
 		$result = array();
@@ -382,13 +526,14 @@ class Invoices extends DolibarrApi
 	/**
 	 * Update a line to a given invoice
 	 *
-	 * @param int   $id             Id of invoice to update
-	 * @param int   $lineid         Id of line to update
-	 * @param array $request_data   InvoiceLine data
+	 * @param	int   $id             Id of invoice to update
+	 * @param	int   $lineid         Id of line to update
+	 * @param	array $request_data   InvoiceLine data
+	 * @phan-param ?array<string,string> $request_data
+	 * @phpstan-param ?array<string,string> $request_data
+	 * @return	Object				  Object with cleaned properties
 	 *
 	 * @url	PUT {id}/lines/{lineid}
-	 *
-	 * @return array
 	 *
 	 * @throws RestException 304
 	 * @throws RestException 401
@@ -396,8 +541,8 @@ class Invoices extends DolibarrApi
 	 */
 	public function putLine($id, $lineid, $request_data = null)
 	{
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
+			throw new RestException(403);
 		}
 
 		$result = $this->invoice->fetch($id);
@@ -406,13 +551,13 @@ class Invoices extends DolibarrApi
 		}
 
 		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 
 		$request_data = (object) $request_data;
 
-		$request_data->desc = checkVal($request_data->desc, 'restricthtml');
-		$request_data->label = checkVal($request_data->label);
+		$request_data->desc = sanitizeVal($request_data->desc, 'restricthtml');
+		$request_data->label = sanitizeVal($request_data->label);
 
 		$updateRes = $this->invoice->updateline(
 			$lineid,
@@ -439,7 +584,8 @@ class Invoices extends DolibarrApi
 			$request_data->fk_unit,
 			$request_data->multicurrency_subprice,
 			0,
-			$request_data->ref_ext
+			$request_data->ref_ext,
+			$request_data->rang
 		);
 
 		if ($updateRes > 0) {
@@ -454,56 +600,173 @@ class Invoices extends DolibarrApi
 	/**
 	 * Add a contact type of given invoice
 	 *
-	 * @param int    $id             Id of invoice to update
-	 * @param int    $contactid      Id of contact to add
-	 * @param string $type           Type of the contact (BILLING, SHIPPING, CUSTOMER)
+	 * @param int    $id            Id of invoice to update
+	 * @param int    $contactid     Id of contact to add
+	 * @param string $type          Type (code in dictionary) of the contact (BILLING, SHIPPING, CUSTOMER + possibly your own)
+	 * @param string $source		internal=Contact intern (llx_user), external=Contact extern (llx_socpeople)
+	 * @param int    $notrigger		0=Enable all triggers (default), 1=Disable all triggers
+	 * @return array
+	 * @phan-return array{success:array{code:int,message:string}}
+	 * @phpstan-return array{success:array{code:int,message:string}}
 	 *
 	 * @url	POST {id}/contact/{contactid}/{type}
-	 *
-	 * @return int
 	 *
 	 * @throws RestException 401
 	 * @throws RestException 404
 	 */
-	public function postContact($id, $contactid, $type)
+	public function postContact($id, $contactid, $type, $source = 'external', $notrigger = 0)
 	{
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
+			throw new RestException(403);
 		}
 
-		$result = $this->invoice->fetch($id);
+		// test source
+		if (empty($source)) {
+			throw new RestException(400, 'Source can not be empty');
+		}
+		$sql_distinct_source = "SELECT DISTINCT source";
+		$sql_distinct_source .= " FROM ".MAIN_DB_PREFIX."c_type_contact";
+		$sql_distinct_source .= " WHERE element LIKE 'facture'";
+		$sql_distinct_source .= " AND source is NOT NULL";
+		$sql_distinct_source .= " AND active != 0";
+		$source_result = $this->db->query($sql_distinct_source);
+		$source_array = array();
 
+		if ($source_result) {
+			$num = $this->db->num_rows($source_result);
+			$i = 0;
+			while ($i < $num) {
+				$obj = $this->db->fetch_object($source_result);
+				$source_kind = (string) $obj->source;
+				array_push($source_array, $source_kind);
+				dol_syslog("source_kind=".$source_kind);
+				$i++;
+			}
+		} else {
+			throw new RestException(503, 'Error when retrieving a list of invoice contact sources: '.$this->db->lasterror());
+		}
+		if (!in_array($source, (array) $source_array, true)) {
+			throw new RestException(400, 'Combo of Source='.$source.' and Type='.$type.' not found in dictionary with active invoice contact types');
+		}
+
+		// test type
+		if (empty($type)) {
+			throw new RestException(400, 'type can not be empty');
+		}
+		// variable called type here, but code in dictionary and database
+		$sql_distinct_type = "SELECT DISTINCT code";
+		$sql_distinct_type .= " FROM ".MAIN_DB_PREFIX."c_type_contact";
+		$sql_distinct_type .= " WHERE element LIKE 'facture'";
+		$sql_distinct_type .= " AND source='".$this->db->escape($source)."'";
+		$sql_distinct_type .= " AND code is NOT NULL";
+		$sql_distinct_type .= " AND active != 0";
+		$type_result = $this->db->query($sql_distinct_type);
+		$type_array = array();
+
+		if ($type_result) {
+			$num = $this->db->num_rows($type_result);
+			$i = 0;
+			while ($i < $num) {
+				$obj = $this->db->fetch_object($type_result);
+				// variable called type here, but code in dictionary and database
+				$type_kind = (string) $obj->code;
+				array_push($type_array, $type_kind);
+				dol_syslog("type_kind=".$type_kind);
+				$i++;
+			}
+		} else {
+			throw new RestException(503, 'Error when retrieving a list of invoice contact types: '.$this->db->lasterror());
+		}
+		if (!in_array($type, (array) $type_array, true)) {
+			throw new RestException(400, 'Combo of Type='.$type.' and Source='.$source.' not found in dictionary with active invoice contact types');
+		}
+
+		// tests done, let's get it
+		$result = $this->invoice->fetch($id);
 		if (!$result) {
 			throw new RestException(404, 'Invoice not found');
 		}
-
-		if (!in_array($type, array('BILLING', 'SHIPPING', 'CUSTOMER'), true)) {
-			throw new RestException(500, 'Availables types: BILLING, SHIPPING OR CUSTOMER');
-		}
-
 		if (!DolibarrApi::_checkAccessToResource('invoice', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 
-		$result = $this->invoice->add_contact($contactid, $type, 'external');
+		$result = $this->invoice->add_contact($contactid, $type, $source, $notrigger);
+
+		if ($result == 0) {
+			throw new RestException(400, 'Already exists: Contact='.$contactid.' is already linked to the invoice='.$id.' as source='.$source.' and type='.$type);
+		} elseif ($result == -1) {
+			throw new RestException(400, 'Wrong contact='.$contactid);
+		} elseif ($result == -2) {
+			throw new RestException(400, 'Wrong type='.$type);
+		} elseif ($result == -3) {
+			throw new RestException(400, 'Not allowed contacts');
+		} elseif ($result == -4) {
+			throw new RestException(400, 'ErrorCommercialNotAllowedForThirdparty');
+		} elseif ($result == -5) {
+			throw new RestException(400, 'Trigger failed');
+		} elseif ($result == -6) {
+			throw new RestException(400, 'DB_ERROR_RECORD_ALREADY_EXISTS');
+		} elseif ($result == -7) {
+			throw new RestException(400, 'Some other error');
+		}
 
 		if (!$result) {
 			throw new RestException(500, 'Error when added the contact');
 		}
 
-		return $this->_cleanObjectDatas($this->invoice);
+		return array(
+			'success' => array(
+				'code' => 200,
+				'message' => 'Contact='.$contactid.' linked to the invoice='.$id.' as '.$source.' '.$type
+			)
+		);
+	}
+
+	/**
+	 * Get contacts of given invoice
+	 *
+	 * Return an array with contact information
+	 *
+	 * @param	int					$id			ID of invoice
+	 * @param	string				$type		Type of the contact (BILLING, SHIPPING, CUSTOMER)
+	 * @return	array<int,mixed>				Array with contact and user associated
+	 *
+	 * @url	GET {id}/contacts
+	 *
+	 * @throws	RestException
+	 */
+	public function getContacts($id, $type = '')
+	{
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'lire')) {
+			throw new RestException(403);
+		}
+
+		$result = $this->invoice->fetch($id);
+		if (!$result) {
+			throw new RestException(404, 'Invoice not found');
+		}
+
+		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+		}
+
+		$contacts = $this->invoice->liste_contact(-1, 'external', 0, $type);
+		$socpeoples = $this->invoice->liste_contact(-1, 'internal', 0, $type);
+
+		$contacts = array_merge($contacts, $socpeoples);
+
+		return $contacts;
 	}
 
 	/**
 	 * Delete a contact type of given invoice
 	 *
-	 * @param int    $id             Id of invoice to update
-	 * @param int    $contactid      Row key of the contact in the array contact_ids.
-	 * @param string $type           Type of the contact (BILLING, SHIPPING, CUSTOMER).
+	 * @param	int    $id             Id of invoice to update
+	 * @param	int    $contactid      Row key of the contact in the array contact_ids.
+	 * @param	string $type           Type of the contact (BILLING, SHIPPING, CUSTOMER).
+	 * @return	Object				   Object with cleaned properties
 	 *
 	 * @url	DELETE {id}/contact/{contactid}/{type}
-	 *
-	 * @return array
 	 *
 	 * @throws RestException 401
 	 * @throws RestException 404
@@ -511,8 +774,8 @@ class Invoices extends DolibarrApi
 	 */
 	public function deleteContact($id, $contactid, $type)
 	{
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
+			throw new RestException(403);
 		}
 
 		$result = $this->invoice->fetch($id);
@@ -522,7 +785,7 @@ class Invoices extends DolibarrApi
 		}
 
 		if (!DolibarrApi::_checkAccessToResource('invoice', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 
 		$contacts = $this->invoice->liste_contact();
@@ -543,12 +806,11 @@ class Invoices extends DolibarrApi
 	/**
 	 * Deletes a line of a given invoice
 	 *
-	 * @param int   $id             Id of invoice
-	 * @param int   $lineid 		Id of the line to delete
+	 * @param	int   $id				Id of invoice
+	 * @param	int   $lineid			Id of the line to delete
+	 * @return	Object					Object with cleaned properties
 	 *
 	 * @url     DELETE {id}/lines/{lineid}
-	 *
-	 * @return array
 	 *
 	 * @throws RestException 400
 	 * @throws RestException 401
@@ -557,26 +819,26 @@ class Invoices extends DolibarrApi
 	 */
 	public function deleteLine($id, $lineid)
 	{
-
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
+			throw new RestException(403);
 		}
 		if (empty($lineid)) {
 			throw new RestException(400, 'Line ID is mandatory');
 		}
 
 		if (!DolibarrApi::_checkAccessToResource('facture', $id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 
 		$result = $this->invoice->fetch($id);
 		if (!$result) {
 			throw new RestException(404, 'Invoice not found');
 		}
+		if ($this->invoice->status != 0) {
+			throw new RestException(403, 'Invoice not in Draft Status : '.$this->invoice->getLibStatut(1));
+		}
 
-		// TODO Check the lineid $lineid is a line of ojbect
-
-		$updateRes = $this->invoice->deleteline($lineid);
+		$updateRes = $this->invoice->deleteLine($lineid, $id);
 		if ($updateRes > 0) {
 			return $this->get($id);
 		} else {
@@ -587,30 +849,51 @@ class Invoices extends DolibarrApi
 	/**
 	 * Update invoice
 	 *
-	 * @param int   $id             Id of invoice to update
-	 * @param array $request_data   Datas
-	 * @return int
+	 * @param	int				$id             Id of invoice to update
+	 * @param	array			$request_data   Datas
+	 * @phan-param ?array<string,string> $request_data
+	 * @phpstan-param ?array<string,string> $request_data
+	 * @return	Object|false					Object with cleaned properties
 	 */
 	public function put($id, $request_data = null)
 	{
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
+			throw new RestException(403);
 		}
-
+		if ($id == 0) {
+			throw new RestException(400, 'No invoice with id=0 can exist');
+		}
 		$result = $this->invoice->fetch($id);
 		if (!$result) {
 			throw new RestException(404, 'Invoice not found');
 		}
 
 		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 
 		foreach ($request_data as $field => $value) {
 			if ($field == 'id') {
 				continue;
 			}
-			$this->invoice->$field = $value;
+			if ($field === 'caller') {
+				// Add a mention of caller so on trigger called after action, we can filter to avoid a loop if we try to sync back again with the caller
+				$this->invoice->context['caller'] = sanitizeVal($request_data['caller'], 'aZ09');
+				continue;
+			}
+			if ($field == 'array_options' && is_array($value)) {
+				foreach ($value as $index => $val) {
+					$this->invoice->array_options[$index] = $this->_checkValForAPI($field, $val, $this->invoice);
+				}
+				continue;
+			}
+
+			$this->invoice->$field = $this->_checkValForAPI($field, $value, $this->invoice);
+
+			// If cond reglement => update date lim reglement
+			if ($field == 'cond_reglement_id') {
+				$this->invoice->date_lim_reglement = $this->invoice->calculate_date_lim_reglement();
+			}
 		}
 
 		// update bank account
@@ -620,23 +903,28 @@ class Invoices extends DolibarrApi
 			}
 		}
 
-		if ($this->invoice->update(DolibarrApiAccess::$user)) {
+		if ($this->invoice->update(DolibarrApiAccess::$user) > 0) {
 			return $this->get($id);
+		} else {
+			throw new RestException(500, $this->invoice->error);
 		}
-
-		return false;
 	}
 
 	/**
 	 * Delete invoice
 	 *
-	 * @param int   $id 	Invoice ID
-	 * @return array
+	 * @param	int		$id		Invoice ID
+	 * @return	array
+	 * @phan-return array{success:array{code:int,message:string}}
+	 * @phpstan-return array{success:array{code:int,message:string}}
 	 */
 	public function delete($id)
 	{
-		if (!DolibarrApiAccess::$user->rights->facture->supprimer) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'supprimer')) {
+			throw new RestException(403);
+		}
+		if ($id == 0) {
+			throw new RestException(400, 'No invoice with id=0 can exist');
 		}
 		$result = $this->invoice->fetch($id);
 		if (!$result) {
@@ -644,12 +932,14 @@ class Invoices extends DolibarrApi
 		}
 
 		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 
 		$result = $this->invoice->delete(DolibarrApiAccess::$user);
 		if ($result < 0) {
 			throw new RestException(500, 'Error when deleting invoice');
+		} elseif ($result == 0) {
+			throw new RestException(403, 'Invoice not erasable');
 		}
 
 		return array(
@@ -663,7 +953,7 @@ class Invoices extends DolibarrApi
 	/**
 	 * Add a line to a given invoice
 	 *
-	 * Exemple of POST query :
+	 * Example of POST query :
 	 * {
 	 *     "desc": "Desc", "subprice": "1.00000000", "qty": "1", "tva_tx": "20.000", "localtax1_tx": "0.000", "localtax2_tx": "0.000",
 	 *     "fk_product": "1", "remise_percent": "0", "date_start": "", "date_end": "", "fk_code_ventilation": 0,  "info_bits": "0",
@@ -673,6 +963,8 @@ class Invoices extends DolibarrApi
 	 *
 	 * @param int   $id             Id of invoice
 	 * @param array $request_data   InvoiceLine data
+	 * @phan-param ?array<string,string> $request_data
+	 * @phpstan-param ?array<string,string> $request_data
 	 *
 	 * @url     POST {id}/lines
 	 *
@@ -685,8 +977,8 @@ class Invoices extends DolibarrApi
 	 */
 	public function postLine($id, $request_data = null)
 	{
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
+			throw new RestException(403);
 		}
 
 		$result = $this->invoice->fetch($id);
@@ -695,13 +987,13 @@ class Invoices extends DolibarrApi
 		}
 
 		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 
 		$request_data = (object) $request_data;
 
-		$request_data->desc = checkVal($request_data->desc, 'restricthtml');
-		$request_data->label = checkVal($request_data->label);
+		$request_data->desc = sanitizeVal($request_data->desc, 'restricthtml');
+		$request_data->label = sanitizeVal($request_data->label);
 
 		// Reset fk_parent_line for no child products and special product
 		if (($request_data->product_type != 9 && empty($request_data->fk_parent_line)) || $request_data->product_type == 9) {
@@ -734,7 +1026,7 @@ class Invoices extends DolibarrApi
 			$request_data->origin,
 			$request_data->origin_id,
 			$request_data->fk_parent_line,
-			empty($request_data->fk_fournprice) ?null:$request_data->fk_fournprice,
+			empty($request_data->fk_fournprice) ? null : $request_data->fk_fournprice,
 			$pa_ht,
 			$request_data->label,
 			$request_data->array_options,
@@ -755,26 +1047,25 @@ class Invoices extends DolibarrApi
 	/**
 	 * Adds a contact to an invoice
 	 *
-	 * @param   int 	$id             	Order ID
-	 * @param   int 	$fk_socpeople       	Id of thirdparty contact (if source = 'external') or id of user (if souce = 'internal') to link
-	 * @param   string 	$type_contact           Type of contact (code). Must a code found into table llx_c_type_contact. For example: BILLING
-	 * @param   string  $source             	external=Contact extern (llx_socpeople), internal=Contact intern (llx_user)
+	 * @param   int		$id					Order ID
+	 * @param   int		$fk_socpeople			Id of thirdparty contact (if source = 'external') or id of user (if source = 'internal') to link
+	 * @param   string	$type_contact           Type of contact (code). Must a code found into table llx_c_type_contact. For example: BILLING
+	 * @param   string  $source					external=Contact extern (llx_socpeople), internal=Contact intern (llx_user)
 	 * @param   int     $notrigger              Disable all triggers
 	 *
 	 * @url POST    {id}/contacts
 	 *
-	 * @return  array
+	 * @return  object
 	 *
 	 * @throws RestException 304
 	 * @throws RestException 401
 	 * @throws RestException 404
 	 * @throws RestException 500 System error
-	 *
 	 */
 	public function addContact($id, $fk_socpeople, $type_contact, $source, $notrigger = 0)
 	{
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
+			throw new RestException(403);
 		}
 		$result = $this->invoice->fetch($id);
 		if (!$result) {
@@ -782,7 +1073,7 @@ class Invoices extends DolibarrApi
 		}
 
 		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 
 		$result = $this->invoice->add_contact($fk_socpeople, $type_contact, $source, $notrigger);
@@ -795,9 +1086,10 @@ class Invoices extends DolibarrApi
 			throw new RestException(404, 'Invoice not found');
 		}
 
-		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
-		}
+		// test already done
+		// if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
+		// 	throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+		// }
 
 		return $this->_cleanObjectDatas($this->invoice);
 	}
@@ -809,21 +1101,19 @@ class Invoices extends DolibarrApi
 	 *
 	 * @param   int $id             Order ID
 	 * @param   int $idwarehouse    Warehouse ID
+	 * @return	Object				Object with cleaned properties
 	 *
 	 * @url POST    {id}/settodraft
-	 *
-	 * @return  array
 	 *
 	 * @throws RestException 304
 	 * @throws RestException 401
 	 * @throws RestException 404
 	 * @throws RestException 500 System error
-	 *
 	 */
 	public function settodraft($id, $idwarehouse = -1)
 	{
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
+			throw new RestException(403);
 		}
 		$result = $this->invoice->fetch($id);
 		if (!$result) {
@@ -831,7 +1121,7 @@ class Invoices extends DolibarrApi
 		}
 
 		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 
 		$result = $this->invoice->setDraft(DolibarrApiAccess::$user, $idwarehouse);
@@ -847,10 +1137,6 @@ class Invoices extends DolibarrApi
 			throw new RestException(404, 'Invoice not found');
 		}
 
-		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
-		}
-
 		return $this->_cleanObjectDatas($this->invoice);
 	}
 
@@ -864,18 +1150,18 @@ class Invoices extends DolibarrApi
 	 *   "notrigger": 0
 	 * }
 	 *
-	 * @param   int $id             Invoice ID
-	 * @param   int $idwarehouse    Warehouse ID
-	 * @param   int $notrigger      1=Does not execute triggers, 0= execute triggers
+	 * @param   int $id             	Invoice ID
+	 * @param   string $force_number   	force ref invoice
+	 * @param   int $idwarehouse    	Warehouse ID
+	 * @param   int $notrigger      	1=Does not execute triggers, 0= execute triggers
+	 * @return	Object|false			Object with cleaned properties
 	 *
 	 * @url POST    {id}/validate
-	 *
-	 * @return  array
 	 */
-	public function validate($id, $idwarehouse = 0, $notrigger = 0)
+	public function validate($id, $force_number = '', $idwarehouse = 0, $notrigger = 0)
 	{
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
+			throw new RestException(403);
 		}
 		$result = $this->invoice->fetch($id);
 		if (!$result) {
@@ -883,10 +1169,10 @@ class Invoices extends DolibarrApi
 		}
 
 		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 
-		$result = $this->invoice->validate(DolibarrApiAccess::$user, '', $idwarehouse, $notrigger);
+		$result = $this->invoice->validate(DolibarrApiAccess::$user, $force_number, $idwarehouse, $notrigger);
 		if ($result == 0) {
 			throw new RestException(304, 'Error nothing done. May be object is already validated');
 		}
@@ -899,9 +1185,14 @@ class Invoices extends DolibarrApi
 			throw new RestException(404, 'Invoice not found');
 		}
 
-		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
-		}
+		// test already done
+		// if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
+		// 	throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+		// }
+
+		// copy from order
+		require_once DOL_DOCUMENT_ROOT.'/core/lib/payments.lib.php';
+		$this->invoice->online_payment_url = getOnlinePaymentUrl(0, 'invoice', $this->invoice->ref);
 
 		return $this->_cleanObjectDatas($this->invoice);
 	}
@@ -909,13 +1200,12 @@ class Invoices extends DolibarrApi
 	/**
 	 * Sets an invoice as paid
 	 *
-	 * @param   int 	$id            Order ID
-	 * @param   string 	$close_code    Code filled if we classify to 'Paid completely' when payment is not complete (for escompte for example)
-	 * @param   string 	$close_note    Comment defined if we classify to 'Paid' when payment is not complete (for escompte for example)
+	 * @param   int		$id            Order ID
+	 * @param   string	$close_code    Code filled if we classify to 'Paid completely' when payment is not complete (for escompte for example)
+	 * @param   string	$close_note    Comment defined if we classify to 'Paid' when payment is not complete (for escompte for example)
+	 * @return	Object				   Object with cleaned properties
 	 *
 	 * @url POST    {id}/settopaid
-	 *
-	 * @return  array 	An invoice object
 	 *
 	 * @throws RestException 304
 	 * @throws RestException 401
@@ -924,8 +1214,8 @@ class Invoices extends DolibarrApi
 	 */
 	public function settopaid($id, $close_code = '', $close_note = '')
 	{
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
+			throw new RestException(403);
 		}
 		$result = $this->invoice->fetch($id);
 		if (!$result) {
@@ -933,7 +1223,7 @@ class Invoices extends DolibarrApi
 		}
 
 		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 
 		$result = $this->invoice->setPaid(DolibarrApiAccess::$user, $close_code, $close_note);
@@ -950,9 +1240,10 @@ class Invoices extends DolibarrApi
 			throw new RestException(404, 'Invoice not found');
 		}
 
-		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
-		}
+		// test already done
+		// if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
+		// 	throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+		// }
 
 		return $this->_cleanObjectDatas($this->invoice);
 	}
@@ -961,11 +1252,10 @@ class Invoices extends DolibarrApi
 	/**
 	 * Sets an invoice as unpaid
 	 *
-	 * @param   int     $id            Order ID
+	 * @param   int     $id				Order ID
+	 * @return	Object					Object with cleaned properties
 	 *
 	 * @url POST    {id}/settounpaid
-	 *
-	 * @return  array   An invoice object
 	 *
 	 * @throws RestException 304
 	 * @throws RestException 401
@@ -974,8 +1264,8 @@ class Invoices extends DolibarrApi
 	 */
 	public function settounpaid($id)
 	{
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
+			throw new RestException(403);
 		}
 		$result = $this->invoice->fetch($id);
 		if (!$result) {
@@ -983,7 +1273,7 @@ class Invoices extends DolibarrApi
 		}
 
 		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 
 		$result = $this->invoice->setUnpaid(DolibarrApiAccess::$user);
@@ -1000,9 +1290,10 @@ class Invoices extends DolibarrApi
 			throw new RestException(404, 'Invoice not found');
 		}
 
-		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
-		}
+		// test already done
+		// if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
+		// 	throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+		// }
 
 		return $this->_cleanObjectDatas($this->invoice);
 	}
@@ -1011,17 +1302,16 @@ class Invoices extends DolibarrApi
 	 * Get discount from invoice
 	 *
 	 * @param int   $id             Id of invoice
+	 * @return	Object				Object with cleaned properties
 	 *
 	 * @url	GET {id}/discount
-	 *
-	 * @return mixed
 	 */
 	public function getDiscount($id)
 	{
 		require_once DOL_DOCUMENT_ROOT.'/core/class/discount.class.php';
 
-		if (!DolibarrApiAccess::$user->rights->facture->lire) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'lire')) {
+			throw new RestException(403);
 		}
 
 		$result = $this->invoice->fetch($id);
@@ -1030,7 +1320,7 @@ class Invoices extends DolibarrApi
 		}
 
 		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 
 		$discountcheck = new DiscountAbsolute($this->db);
@@ -1049,10 +1339,10 @@ class Invoices extends DolibarrApi
 	/**
 	 * Create a discount (credit available) for a credit note or a deposit.
 	 *
-	 * @param   int 	$id            Invoice ID
-	 * @url POST    {id}/markAsCreditAvailable
+	 * @param   int		$id				Invoice ID
+	 * @return	Object					Object with cleaned properties
 	 *
-	 * @return  array 	An invoice object
+	 * @url POST    {id}/markAsCreditAvailable
 	 *
 	 * @throws RestException 304
 	 * @throws RestException 401
@@ -1063,8 +1353,8 @@ class Invoices extends DolibarrApi
 	{
 		require_once DOL_DOCUMENT_ROOT.'/core/class/discount.class.php';
 
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
+			throw new RestException(403);
 		}
 
 		$result = $this->invoice->fetch($id);
@@ -1073,10 +1363,10 @@ class Invoices extends DolibarrApi
 		}
 
 		if (!DolibarrApi::_checkAccessToResource('facture', $this->invoice->id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 
-		if ($this->invoice->paye) {
+		if ($this->invoice->paye) {		// TODO Replace by a test on status
 			throw new RestException(500, 'Alreay paid');
 		}
 
@@ -1089,21 +1379,37 @@ class Invoices extends DolibarrApi
 
 		$canconvert = 0;
 		if ($this->invoice->type == Facture::TYPE_DEPOSIT && empty($discountcheck->id)) {
-			$canconvert = 1; // we can convert deposit into discount if deposit is payed (completely, partially or not at all) and not already converted (see real condition into condition used to show button converttoreduc)
+			$canconvert = 1; // we can convert deposit into discount if deposit is paid (completely, partially or not at all) and not already converted (see real condition into condition used to show button converttoreduc)
 		}
 		if (($this->invoice->type == Facture::TYPE_CREDIT_NOTE || $this->invoice->type == Facture::TYPE_STANDARD) && $this->invoice->paye == 0 && empty($discountcheck->id)) {
-			$canconvert = 1; // we can convert credit note into discount if credit note is not payed back and not already converted and amount of payment is 0 (see real condition into condition used to show button converttoreduc)
+			$canconvert = 1; // we can convert credit note into discount if credit note is not paid back and not already converted and amount of payment is 0 (see real condition into condition used to show button converttoreduc)
 		}
 		if ($canconvert) {
 			$this->db->begin();
 
 			$amount_ht = $amount_tva = $amount_ttc = array();
 			$multicurrency_amount_ht = $multicurrency_amount_tva = $multicurrency_amount_ttc = array();
+			'
+			@phan-var-force array<string,float> $amount_ht
+			@phan-var-force array<string,float> $amount_tva
+			@phan-var-force array<string,float> $amount_ttc
+			@phan-var-force array<string,float> $multicurrency_amount_ht
+			@phan-var-force array<string,float> $multicurrency_amount_tva
+			@phan-var-force array<string,float> $multicurrency_amount_ttc
+			';
 
 			// Loop on each vat rate
 			$i = 0;
 			foreach ($this->invoice->lines as $line) {
 				if ($line->product_type < 9 && $line->total_ht != 0) { // Remove lines with product_type greater than or equal to 9
+					if (!array_key_exists($line->tva_tx, $amount_ht)) {
+						$amount_ht[$line->tva_tx] = 0.0;
+						$amount_tva[$line->tva_tx] = 0.0;
+						$amount_ttc[$line->tva_tx] = 0.0;
+						$multicurrency_amount_ht[$line->tva_tx] = 0.0;
+						$multicurrency_amount_tva[$line->tva_tx] = 0.0;
+						$multicurrency_amount_ttc[$line->tva_tx] = 0.0;
+					}
 					// no need to create discount if amount is null
 					$amount_ht[$line->tva_tx] += $line->total_ht;
 					$amount_tva[$line->tva_tx] += $line->total_tva;
@@ -1128,6 +1434,7 @@ class Invoices extends DolibarrApi
 			}
 
 			$discount->fk_soc = $this->invoice->socid;
+			$discount->socid = $this->invoice->socid;
 			$discount->fk_facture_source = $this->invoice->id;
 
 			$error = 0;
@@ -1166,7 +1473,9 @@ class Invoices extends DolibarrApi
 				}
 
 				$discount->amount_ht = $discount->amount_ttc = $total_payments + $total_creditnote_and_deposit - $this->invoice->total_ttc;
+				$discount->total_ht = $discount->total_ttc = $total_payments + $total_creditnote_and_deposit - $this->invoice->total_ttc;
 				$discount->amount_tva = 0;
+				$discount->total_tva = 0;
 				$discount->tva_tx = 0;
 
 				$result = $discount->create(DolibarrApiAccess::$user);
@@ -1179,10 +1488,16 @@ class Invoices extends DolibarrApi
 					$discount->amount_ht = abs($amount_ht[$tva_tx]);
 					$discount->amount_tva = abs($amount_tva[$tva_tx]);
 					$discount->amount_ttc = abs($amount_ttc[$tva_tx]);
+					$discount->total_ht = abs($amount_ht[$tva_tx]);
+					$discount->total_tva = abs($amount_tva[$tva_tx]);
+					$discount->total_ttc = abs($amount_ttc[$tva_tx]);
 					$discount->multicurrency_amount_ht = abs($multicurrency_amount_ht[$tva_tx]);
 					$discount->multicurrency_amount_tva = abs($multicurrency_amount_tva[$tva_tx]);
 					$discount->multicurrency_amount_ttc = abs($multicurrency_amount_ttc[$tva_tx]);
-					$discount->tva_tx = abs($tva_tx);
+					$discount->multicurrency_total_ht = abs($multicurrency_amount_ht[$tva_tx]);
+					$discount->multicurrency_total_tva = abs($multicurrency_amount_tva[$tva_tx]);
+					$discount->multicurrency_total_ttc = abs($multicurrency_amount_ttc[$tva_tx]);
+					$discount->tva_tx = abs((float) $tva_tx);
 
 					$result = $discount->create(DolibarrApiAccess::$user);
 					if ($result < 0) {
@@ -1194,7 +1509,7 @@ class Invoices extends DolibarrApi
 
 			if (empty($error)) {
 				if ($this->invoice->type != Facture::TYPE_DEPOSIT) {
-					// Classe facture
+					// Set the invoice as paid
 					$result = $this->invoice->setPaid(DolibarrApiAccess::$user);
 					if ($result >= 0) {
 						$this->db->commit();
@@ -1214,28 +1529,26 @@ class Invoices extends DolibarrApi
 		return $this->_cleanObjectDatas($this->invoice);
 	}
 
-	 /**
-	  * Add a discount line into an invoice (as an invoice line) using an existing absolute discount
-	  *
-	  * Note that this consume the discount.
-	  *
-	  * @param int   $id             Id of invoice
-	  * @param int   $discountid     Id of discount
-	  *
-	  * @url     POST {id}/usediscount/{discountid}
-	  *
-	  * @return int
-	  *
-	  * @throws RestException 400
-	  * @throws RestException 401
-	  * @throws RestException 404
-	  * @throws RestException 405
-	  */
+	/**
+	 * Add a discount line into an invoice (as an invoice line) using an existing absolute discount
+	 *
+	 * Note that this consume the discount.
+	 *
+	 * @param int   $id             Id of invoice
+	 * @param int   $discountid     Id of discount
+	 * @return int
+	 *
+	 * @url     POST {id}/usediscount/{discountid}
+	 *
+	 * @throws RestException 400
+	 * @throws RestException 401
+	 * @throws RestException 404
+	 * @throws RestException 405
+	 */
 	public function useDiscount($id, $discountid)
 	{
-
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
+			throw new RestException(403);
 		}
 		if (empty($id)) {
 			throw new RestException(400, 'Invoice ID is mandatory');
@@ -1245,7 +1558,7 @@ class Invoices extends DolibarrApi
 		}
 
 		if (!DolibarrApi::_checkAccessToResource('facture', $id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 
 		$result = $this->invoice->fetch($id);
@@ -1261,30 +1574,28 @@ class Invoices extends DolibarrApi
 		return $result;
 	}
 
-	 /**
-	  * Add an available credit note discount to payments of an existing invoice.
-	  *
-	  *  Note that this consume the credit note.
-	  *
-	  * @param int   $id            Id of invoice
-	  * @param int   $discountid    Id of a discount coming from a credit note
-	  *
-	  * @url     POST {id}/usecreditnote/{discountid}
-	  *
-	  * @return int
-	  *
-	  * @throws RestException 400
-	  * @throws RestException 401
-	  * @throws RestException 404
-	  * @throws RestException 405
-	  */
+	/**
+	 * Add an available credit note discount to payments of an existing invoice.
+	 *
+	 *  Note that this consume the credit note.
+	 *
+	 * @param int   $id            Id of invoice
+	 * @param int   $discountid    Id of a discount coming from a credit note
+	 * @return	int
+	 *
+	 * @url     POST {id}/usecreditnote/{discountid}
+	 *
+	 * @throws RestException 400
+	 * @throws RestException 401
+	 * @throws RestException 404
+	 * @throws RestException 405
+	 */
 	public function useCreditNote($id, $discountid)
 	{
-
 		require_once DOL_DOCUMENT_ROOT.'/core/class/discount.class.php';
 
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
+			throw new RestException(403);
 		}
 		if (empty($id)) {
 			throw new RestException(400, 'Invoice ID is mandatory');
@@ -1294,7 +1605,7 @@ class Invoices extends DolibarrApi
 		}
 
 		if (!DolibarrApi::_checkAccessToResource('facture', $id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 		$discount = new DiscountAbsolute($this->db);
 		$result = $discount->fetch($discountid);
@@ -1313,11 +1624,12 @@ class Invoices extends DolibarrApi
 	/**
 	 * Get list of payments of a given invoice
 	 *
-	 * @param int   $id             Id of invoice
+	 * @param	int   $id             Id of invoice
+	 * @return	array
+	 * @phan-return array<array{amount:int|float,date:int,num:string,ref:string,ref_ext?:string,fk_bank_line?:int,type:string}>
+	 * @phpstan-return array<array{amount:int|float,date:int,num:string,ref:string,ref_ext?:string,fk_bank_line?:int,type:string}>
 	 *
 	 * @url     GET {id}/payments
-	 *
-	 * @return array
 	 *
 	 * @throws RestException 400
 	 * @throws RestException 401
@@ -1326,16 +1638,15 @@ class Invoices extends DolibarrApi
 	 */
 	public function getPayments($id)
 	{
-
-		if (!DolibarrApiAccess::$user->rights->facture->lire) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'lire')) {
+			throw new RestException(403);
 		}
 		if (empty($id)) {
 			throw new RestException(400, 'Invoice ID is mandatory');
 		}
 
 		if (!DolibarrApi::_checkAccessToResource('facture', $id)) {
-			throw new RestException(401, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 
 		$result = $this->invoice->fetch($id);
@@ -1344,7 +1655,7 @@ class Invoices extends DolibarrApi
 		}
 
 		$result = $this->invoice->getListOfPayments();
-		if ($result < 0) {
+		if (!is_array($result) && $result < 0) {
 			throw new RestException(405, $this->invoice->error);
 		}
 
@@ -1356,7 +1667,7 @@ class Invoices extends DolibarrApi
 	 * Add payment line to a specific invoice with the remain to pay as amount.
 	 *
 	 * @param int     $id                               Id of invoice
-	 * @param string  $datepaye           {@from body}  Payment date        {@type timestamp}
+	 * @param string  $datepaye           {@from body}  Payment date
 	 * @param int     $paymentid          {@from body}  Payment mode Id {@min 1}
 	 * @param string  $closepaidinvoices  {@from body}  Close paid invoices {@choice yes,no}
 	 * @param int     $accountid          {@from body}  Account Id {@min 1}
@@ -1375,11 +1686,9 @@ class Invoices extends DolibarrApi
 	 */
 	public function addPayment($id, $datepaye, $paymentid, $closepaidinvoices, $accountid, $num_payment = '', $comment = '', $chqemetteur = '', $chqbank = '')
 	{
-		global $conf;
-
 		require_once DOL_DOCUMENT_ROOT.'/compta/paiement/class/paiement.class.php';
 
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
 			throw new RestException(403);
 		}
 		if (empty($id)) {
@@ -1390,7 +1699,7 @@ class Invoices extends DolibarrApi
 			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
 		}
 
-		if (!empty($conf->banque->enabled)) {
+		if (isModEnabled("bank")) {
 			if (empty($accountid)) {
 				throw new RestException(400, 'Account ID is mandatory');
 			}
@@ -1407,10 +1716,10 @@ class Invoices extends DolibarrApi
 		}
 
 		// Calculate amount to pay
-		$totalpaye = $this->invoice->getSommePaiement();
+		$totalpaid = $this->invoice->getSommePaiement();
 		$totalcreditnotes = $this->invoice->getSumCreditNotesUsed();
 		$totaldeposits = $this->invoice->getSumDepositsUsed();
-		$resteapayer = price2num($this->invoice->total_ttc - $totalpaye - $totalcreditnotes - $totaldeposits, 'MT');
+		$resteapayer = price2num($this->invoice->total_ttc - $totalpaid - $totalcreditnotes - $totaldeposits, 'MT');
 
 		$this->db->begin();
 
@@ -1420,26 +1729,29 @@ class Invoices extends DolibarrApi
 		// Clean parameters amount if payment is for a credit note
 		if ($this->invoice->type == Facture::TYPE_CREDIT_NOTE) {
 			$resteapayer = price2num($resteapayer, 'MT');
-			$amounts[$id] = -$resteapayer;
+			$amounts[$id] = (float) price2num(-1 * abs((float) $resteapayer), 'MT');
 			// Multicurrency
 			$newvalue = price2num($this->invoice->multicurrency_total_ttc, 'MT');
-			$multicurrency_amounts[$id] = -$newvalue;
+			$multicurrency_amounts[$id] = (float) price2num(-1 * (float) $newvalue, 'MT');
 		} else {
 			$resteapayer = price2num($resteapayer, 'MT');
-			$amounts[$id] = $resteapayer;
+			$amounts[$id] = (float) $resteapayer;
 			// Multicurrency
 			$newvalue = price2num($this->invoice->multicurrency_total_ttc, 'MT');
-			$multicurrency_amounts[$id] = $newvalue;
+			$multicurrency_amounts[$id] = (float) $newvalue;
 		}
-
 
 		// Creation of payment line
 		$paymentobj = new Paiement($this->db);
-		$paymentobj->datepaye     = $datepaye;
+		if (is_numeric($datepaye)) {
+			$paymentobj->datepaye = $datepaye;
+		} else {
+			$paymentobj->datepaye = dol_stringtotime($datepaye);
+		}
 		$paymentobj->amounts      = $amounts; // Array with all payments dispatching with invoice id
 		$paymentobj->multicurrency_amounts = $multicurrency_amounts; // Array with all payments dispatching
 		$paymentobj->paiementid = $paymentid;
-		$paymentobj->paiementcode = dol_getIdFromCode($this->db, $paymentid, 'c_paiement', 'id', 'code', 1);
+		$paymentobj->paiementcode = (string) dol_getIdFromCode($this->db, (string) $paymentid, 'c_paiement', 'id', 'code', 1);
 		$paymentobj->num_payment = $num_payment;
 		$paymentobj->note_private = $comment;
 
@@ -1449,7 +1761,7 @@ class Invoices extends DolibarrApi
 			throw new RestException(400, 'Payment error : '.$paymentobj->error);
 		}
 
-		if (!empty($conf->banque->enabled)) {
+		if (isModEnabled("bank")) {
 			$label = '(CustomerInvoicePayment)';
 
 			if ($paymentobj->paiementcode == 'CHQ' && empty($chqemetteur)) {
@@ -1475,8 +1787,10 @@ class Invoices extends DolibarrApi
 	 * Warning: Take care that all invoices are owned by the same customer.
 	 * Example of value for parameter arrayofamounts: {"1": {"amount": "99.99", "multicurrency_amount": ""}, "2": {"amount": "", "multicurrency_amount": "10"}}
 	 *
-	 * @param array   $arrayofamounts     {@from body}  Array with id of invoices with amount to pay for each invoice
-	 * @param string  $datepaye           {@from body}  Payment date        {@type timestamp}
+	 * @param array   $arrayofamounts      {@from body}  Array with id of invoices with amount to pay for each invoice
+	 * @phan-param array<string,array{amount:string,multicurrency_amount:string}> $arrayofamounts
+	 * @phpstan-param array<string,array{amount:string,multicurrency_amount:string}> $arrayofamounts
+	 * @param string  $datepaye            {@from body}  Payment date
 	 * @param int     $paymentid           {@from body}  Payment mode Id {@min 1}
 	 * @param string  $closepaidinvoices   {@from body}  Close paid invoices {@choice yes,no}
 	 * @param int     $accountid           {@from body}  Account Id {@min 1}
@@ -1490,6 +1804,7 @@ class Invoices extends DolibarrApi
 	 * @url     POST /paymentsdistributed
 	 *
 	 * @return int  Payment ID
+	 *
 	 * @throws RestException 400
 	 * @throws RestException 401
 	 * @throws RestException 403
@@ -1497,23 +1812,21 @@ class Invoices extends DolibarrApi
 	 */
 	public function addPaymentDistributed($arrayofamounts, $datepaye, $paymentid, $closepaidinvoices, $accountid, $num_payment = '', $comment = '', $chqemetteur = '', $chqbank = '', $ref_ext = '', $accepthigherpayment = false)
 	{
-		global $conf;
-
 		require_once DOL_DOCUMENT_ROOT.'/compta/paiement/class/paiement.class.php';
 
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
 			throw new RestException(403);
 		}
 		foreach ($arrayofamounts as $id => $amount) {
 			if (empty($id)) {
 				throw new RestException(400, 'Invoice ID is mandatory. Fill the invoice id and amount into arrayofamounts parameter. For example: {"1": "99.99", "2": "10"}');
 			}
-			if (!DolibarrApi::_checkAccessToResource('facture', $id)) {
+			if (!DolibarrApi::_checkAccessToResource('facture', (int) $id)) {
 				throw new RestException(403, 'Access not allowed on invoice ID '.$id.' for login '.DolibarrApiAccess::$user->login);
 			}
 		}
 
-		if (!empty($conf->banque->enabled)) {
+		if (isModEnabled("bank")) {
 			if (empty($accountid)) {
 				throw new RestException(400, 'Account ID is mandatory');
 			}
@@ -1529,7 +1842,7 @@ class Invoices extends DolibarrApi
 
 		// Loop on each invoice to pay
 		foreach ($arrayofamounts as $id => $amountarray) {
-			$result = $this->invoice->fetch($id);
+			$result = $this->invoice->fetch((int) $id);
 			if (!$result) {
 				$this->db->rollback();
 				throw new RestException(404, 'Invoice ID '.$id.' not found');
@@ -1549,34 +1862,34 @@ class Invoices extends DolibarrApi
 			}
 
 			// Calculate amount to pay
-			$totalpaye = $this->invoice->getSommePaiement($is_multicurrency);
+			$totalpaid = $this->invoice->getSommePaiement($is_multicurrency);
 			$totalcreditnotes = $this->invoice->getSumCreditNotesUsed($is_multicurrency);
 			$totaldeposits = $this->invoice->getSumDepositsUsed($is_multicurrency);
-			$remainstopay = $amount = price2num($total_ttc - $totalpaye - $totalcreditnotes - $totaldeposits, 'MT');
+			$remainstopay = $amount = (float) price2num($total_ttc - $totalpaid - $totalcreditnotes - $totaldeposits, 'MT');
 
 			if (!$is_multicurrency && $amountarray["amount"] != 'remain') {
-				$amount = price2num($amountarray["amount"], 'MT');
+				$amount = (float) price2num($amountarray["amount"], 'MT');
 			}
 
 			if ($is_multicurrency && $amountarray["multicurrency_amount"] != 'remain') {
-				$amount = price2num($amountarray["multicurrency_amount"], 'MT');
+				$amount = (float) price2num($amountarray["multicurrency_amount"], 'MT');
 			}
 
-			if ($amount > $remainstopay && !$accepthigherpayment) {
+			if (abs($amount) > abs($remainstopay) && !$accepthigherpayment) {
 				$this->db->rollback();
 				throw new RestException(400, 'Payment amount on invoice ID '.$id.' ('.$amount.') is higher than remain to pay ('.$remainstopay.')');
 			}
 
 			if ($this->invoice->type == Facture::TYPE_CREDIT_NOTE) {
-				$amount = -$amount;
+				$amount = (float) price2num(-1 * abs((float) $amount), 'MT');
 			}
 
 			if ($is_multicurrency) {
 				$amounts[$id] = null;
 				// Multicurrency
-				$multicurrency_amounts[$id] = $amount;
+				$multicurrency_amounts[$id] = (float) $amount;
 			} else {
-				$amounts[$id] = $amount;
+				$amounts[$id] = (float) $amount;
 				// Multicurrency
 				$multicurrency_amounts[$id] = null;
 			}
@@ -1584,11 +1897,15 @@ class Invoices extends DolibarrApi
 
 		// Creation of payment line
 		$paymentobj = new Paiement($this->db);
-		$paymentobj->datepaye     = $datepaye;
+		if (is_numeric($datepaye)) {
+			$paymentobj->datepaye = $datepaye;
+		} else {
+			$paymentobj->datepaye = dol_stringtotime($datepaye);
+		}
 		$paymentobj->amounts      = $amounts; // Array with all payments dispatching with invoice id
 		$paymentobj->multicurrency_amounts = $multicurrency_amounts; // Array with all payments dispatching
 		$paymentobj->paiementid   = $paymentid;
-		$paymentobj->paiementcode = dol_getIdFromCode($this->db, $paymentid, 'c_paiement', 'id', 'code', 1);
+		$paymentobj->paiementcode = (string) dol_getIdFromCode($this->db, (string) $paymentid, 'c_paiement', 'id', 'code', 1);
 		$paymentobj->num_payment  = $num_payment;
 		$paymentobj->note_private = $comment;
 		$paymentobj->ref_ext      = $ref_ext;
@@ -1597,10 +1914,10 @@ class Invoices extends DolibarrApi
 			$this->db->rollback();
 			throw new RestException(400, 'Payment error : '.$paymentobj->error);
 		}
-		if (!empty($conf->banque->enabled)) {
+		if (isModEnabled("bank")) {
 			$label = '(CustomerInvoicePayment)';
 			if ($paymentobj->paiementcode == 'CHQ' && empty($chqemetteur)) {
-				  throw new RestException(400, 'Emetteur is mandatory when payment code is '.$paymentobj->paiementcode);
+				throw new RestException(400, 'Emetteur is mandatory when payment code is '.$paymentobj->paiementcode);
 			}
 			if ($this->invoice->type == Facture::TYPE_CREDIT_NOTE) {
 				$label = '(CustomerInvoicePaymentBack)'; // Refund of a credit note
@@ -1626,6 +1943,9 @@ class Invoices extends DolibarrApi
 	 * @url     PUT payments/{id}
 	 *
 	 * @return array
+	 * @phan-return array{success:array{code:int,message:string}}
+	 * @phpstan-return array{success:array{code:int,message:string}}
+	 *
 	 * @throws RestException 400 Bad parameters
 	 * @throws RestException 401 Not allowed
 	 * @throws RestException 404 Not found
@@ -1634,8 +1954,8 @@ class Invoices extends DolibarrApi
 	{
 		require_once DOL_DOCUMENT_ROOT.'/compta/paiement/class/paiement.class.php';
 
-		if (!DolibarrApiAccess::$user->rights->facture->creer) {
-			throw new RestException(401);
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'creer')) {
+			throw new RestException(403);
 		}
 		if (empty($id)) {
 			throw new RestException(400, 'Payment ID is mandatory');
@@ -1666,9 +1986,12 @@ class Invoices extends DolibarrApi
 	// phpcs:disable PEAR.NamingConventions.ValidFunctionName.PublicUnderscore
 	/**
 	 * Clean sensible object datas
+	 * @phpstan-template T
 	 *
 	 * @param   Object  $object     Object to clean
 	 * @return  Object              Object with cleaned properties
+	 * @phpstan-param T $object
+	 * @phpstan-return T
 	 */
 	protected function _cleanObjectDatas($object)
 	{
@@ -1681,6 +2004,7 @@ class Invoices extends DolibarrApi
 		unset($object->barcode_type_code);
 		unset($object->barcode_type_label);
 		unset($object->barcode_type_coder);
+		unset($object->canvas);
 
 		return $object;
 	}
@@ -1688,13 +2012,16 @@ class Invoices extends DolibarrApi
 	/**
 	 * Validate fields before create or update object
 	 *
-	 * @param array|null    $data       Datas to validate
-	 * @return array
+	 * @param ?array<string,string> $data   Data to validate
+	 * @return array<string,string>
 	 *
 	 * @throws RestException
 	 */
 	private function _validate($data)
 	{
+		if ($data === null) {
+			$data = array();
+		}
 		$invoice = array();
 		foreach (Invoices::$FIELDS as $field) {
 			if (!isset($data[$field])) {
@@ -1703,5 +2030,228 @@ class Invoices extends DolibarrApi
 			$invoice[$field] = $data[$field];
 		}
 		return $invoice;
+	}
+
+
+	/**
+	 * Get properties of a template invoice object
+	 *
+	 * Return an array with invoice information
+	 *
+	 * @param	int		$id				ID of template invoice
+	 * @param   int     $contact_list	0:Return array contains all properties, 1:Return array contains just id, -1: Do not return contacts/adddesses
+	 * @return	Object					Object with cleaned properties
+	 *
+	 * @url GET    templates/{id}
+	 *
+	 * @throws	RestException
+	 */
+	public function getTemplateInvoice($id, $contact_list = 1)
+	{
+		return $this->_fetchTemplateInvoice($id, '', '', $contact_list);
+	}
+
+
+	/**
+	 * List template invoices
+	 *
+	 * Get a list of template invoices
+	 *
+	 * @param string	$sortfield			Sort field
+	 * @param string	$sortorder			Sort order
+	 * @param int		$limit				Limit for list
+	 * @param int		$page				Page number
+	 * @param string	$thirdparty_ids		Thirdparty ids to filter orders of (example '1' or '1,2,3') {@pattern /^[0-9,]*$/i}
+	 * @param string	$status				Filter by template status: draft | active | suspended
+	 * @param string	$sqlfilters			Other criteria to filter answers separated by a comma. Syntax example "(t.ref:like:'SO-%') and (t.date_creation:<:'20160101')"
+	 * @param string	$properties			Restrict the data returned to these properties. Ignored if empty. Comma separated list of properties names
+	 * @param bool		$pagination_data	If this parameter is set to true the response will include pagination data. Default value is false. Page starts from 0
+	 * @param int		$loadlinkedobjects	Load also linked object
+	 * @param bool		$withLines			true or false to display or hide lines
+	 * @return array						Array of recurring invoice objects
+	 * @phan-return FactureRec[]|array{data:FactureRec[],pagination:array{total:int,page:int,page_count:int,limit:int}}
+	 * @phpstan-return FactureRec[]|array{data:FactureRec[],pagination:array{total:int,page:int,page_count:int,limit:int}}
+	 *
+	 * @url GET templates
+	 *
+	 * @throws RestException 404 Not found
+	 * @throws RestException 503 Error
+	 */
+	public function indexTemplateInvoices($sortfield = "t.rowid", $sortorder = 'ASC', $limit = 100, $page = 0, $thirdparty_ids = '', $status = '', $sqlfilters = '', $properties = '', $pagination_data = false, $loadlinkedobjects = 0, $withLines = true)
+	{
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'lire')) {
+			throw new RestException(403);
+		}
+
+		$obj_ret = array();
+
+		// case of external user, $thirdparty_ids param is ignored and replaced by user's socid
+		$socids = DolibarrApiAccess::$user->socid ?: $thirdparty_ids;
+
+
+		// If the internal user must only see his customers, force searching by him
+		$search_sale = 0;
+		if (!DolibarrApiAccess::$user->hasRight('societe', 'client', 'voir') && !$socids) {
+			$search_sale = DolibarrApiAccess::$user->id;
+		}
+
+		$sql = "SELECT t.rowid";
+		$sql .= " FROM ".MAIN_DB_PREFIX."facture_rec AS t";
+		$sql .= " INNER JOIN ".MAIN_DB_PREFIX."societe AS s ON (s.rowid = t.fk_soc)";
+		$sql .= " LEFT JOIN ".MAIN_DB_PREFIX."facture_rec_extrafields AS ef ON (ef.fk_object = t.rowid)";
+		$sql .= ' WHERE t.entity IN ('.getEntity('invoice').')';
+		if ($socids) {
+			$sql .= " AND t.fk_soc IN (".$this->db->sanitize($socids).")";
+		}
+
+		// Search on sale representative
+		if ($search_sale && $search_sale != '-1') {
+			if ($search_sale == -2) {
+				$sql .= " AND NOT EXISTS (SELECT sc.fk_soc FROM ".MAIN_DB_PREFIX."societe_commerciaux AS sc WHERE sc.fk_soc = t.fk_soc)";
+			} elseif ($search_sale > 0) {
+				$sql .= " AND EXISTS (SELECT sc.fk_soc FROM ".MAIN_DB_PREFIX."societe_commerciaux AS sc WHERE sc.fk_soc = t.fk_soc AND sc.fk_user = ".((int) $search_sale).")";
+			}
+		}
+
+		// Filter by status
+		if ($status == 'active') {
+			$sql .= " AND t.suspended = 0 AND t.frequency IS NOT NULL";
+		}
+		if ($status == 'suspended') {
+			$sql .= " AND t.suspended = 1 AND t.frequency IS NOT NULL";
+		}
+		if ($status == 'draft') {
+			$sql .= " AND t.frequency IS NULL";
+		}
+		// add sql filters
+		if ($sqlfilters) {
+			$errormessage = '';
+			$sql .= forgeSQLFromUniversalSearchCriteria($sqlfilters, $errormessage);
+			if ($errormessage) {
+				throw new RestException(400, 'Error when validating parameter sqlfilters -> '.$errormessage);
+			}
+		}
+
+		//this query will return total template invoices with the filters given
+		$sqlTotals = str_replace('SELECT t.rowid', 'SELECT count(t.rowid) as total', $sql);
+
+		$sql .= $this->db->order($sortfield, $sortorder);
+		if ($limit) {
+			if ($page < 0) {
+				$page = 0;
+			}
+			$offset = $limit * $page;
+
+			$sql .= $this->db->plimit($limit + 1, $offset);
+		}
+
+		$result = $this->db->query($sql);
+		if ($result) {
+			$i = 0;
+			$num = $this->db->num_rows($result);
+			$min = min($num, ($limit <= 0 ? $num : $limit));
+			while ($i < $min) {
+				$obj = $this->db->fetch_object($result);
+				$factureRec = new FactureRec($this->db);
+				if ($factureRec->fetch($obj->rowid) > 0) {
+					if ($loadlinkedobjects) {
+						// retrieve linked objects
+						$factureRec->fetchObjectLinked();
+					}
+
+					if (!$withLines) {
+						unset($factureRec->lines);
+					}
+
+					$obj_ret[] = $this->_filterObjectProperties($this->_cleanTemplateObjectDatas($factureRec), $properties);
+				}
+				$i++;
+			}
+		} else {
+			throw new RestException(503, 'Error when retrieving recurring invoice templates: '.$this->db->lasterror());
+		}
+
+		//if $pagination_data is true the response will contain element data with all values and element pagination with pagination data(total,page,limit)
+		if ($pagination_data) {
+			$totalsResult = $this->db->query($sqlTotals);
+			$total = $this->db->fetch_object($totalsResult)->total;
+
+			$tmp = $obj_ret;
+			$obj_ret = array();
+
+			$obj_ret['data'] = $tmp;
+			$obj_ret['pagination'] = array(
+				'total' => (int) $total,
+				'page' => $page,
+				'page_count' => ceil((int) $total / $limit),
+				'limit' => $limit
+			);
+		}
+
+		return $obj_ret;
+	}
+
+	/**
+	 * Get properties of an invoice object
+	 *
+	 * Return an array with invoice information
+	 *
+	 * @param   int         $id				ID of order
+	 * @param	string		$ref			Ref of object
+	 * @param	string		$ref_ext		External reference of object
+	 * @param   int         $contact_list	0: Returned array of contacts/addresses contains all properties, 1: Return array contains just id, -1: Do not return contacts/adddesses
+	 * @return	Object						Object with cleaned properties
+	 *
+	 * @throws	RestException
+	 */
+	private function _fetchTemplateInvoice($id, $ref = '', $ref_ext = '', $contact_list = 1)
+	{
+		if (!DolibarrApiAccess::$user->hasRight('facture', 'lire')) {
+			throw new RestException(403);
+		}
+
+		$result = $this->template_invoice->fetch($id, $ref, $ref_ext);
+		if (!$result) {
+			throw new RestException(404, 'Template invoice not found');
+		}
+
+		if (!DolibarrApi::_checkAccessToResource('facturerec', $this->template_invoice->id)) {
+			throw new RestException(403, 'Access not allowed for login '.DolibarrApiAccess::$user->login);
+		}
+
+		// Add external contacts ids
+		if ($contact_list > -1) {
+			$tmparray = $this->template_invoice->liste_contact(-1, 'external', $contact_list);
+			if (is_array($tmparray)) {
+				$this->template_invoice->contacts_ids = $tmparray;
+			}
+		}
+
+		$this->template_invoice->fetchObjectLinked();
+		return $this->_cleanTemplateObjectDatas($this->template_invoice);
+	}
+
+
+	// phpcs:disable PEAR.NamingConventions.ValidFunctionName.PublicUnderscore
+	/**
+	 * Clean sensible object datas
+	 *
+	 * @param   Object  $object     Object to clean
+	 * @return  Object              Object with cleaned properties
+	 */
+	protected function _cleanTemplateObjectDatas($object)
+	{
+		// phpcs:enable
+		$object = parent::_cleanObjectDatas($object);
+
+		unset($object->note);
+		unset($object->address);
+		unset($object->barcode_type);
+		unset($object->barcode_type_code);
+		unset($object->barcode_type_label);
+		unset($object->barcode_type_coder);
+		unset($object->canvas);
+
+		return $object;
 	}
 }

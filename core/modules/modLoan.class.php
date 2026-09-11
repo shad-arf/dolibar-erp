@@ -31,7 +31,6 @@ include_once DOL_DOCUMENT_ROOT.'/core/modules/DolibarrModules.class.php';
  */
 class modLoan extends DolibarrModules
 {
-
 	/**
 	 *   Constructor. Define names, constants, directories, boxes, permissions
 	 *
@@ -39,8 +38,6 @@ class modLoan extends DolibarrModules
 	 */
 	public function __construct($db)
 	{
-		global $conf;
-
 		$this->db = $db;
 		$this->numero = 520;
 
@@ -54,7 +51,7 @@ class modLoan extends DolibarrModules
 		$this->version = 'dolibarr';
 
 		$this->const_name = 'MAIN_MODULE_'.strtoupper($this->name);
-		$this->picto = 'money-bill-alt';
+		$this->picto = 'loan';
 
 		// Data directories to create when module is enabled
 		$this->dirs = array("/loan/temp");
@@ -67,7 +64,7 @@ class modLoan extends DolibarrModules
 		$this->depends = array(); // List of module class names as string that must be enabled if this module is enabled
 		$this->requiredby = array(); // List of module ids to disable if this one is disabled
 		$this->conflictwith = array(); // List of module class names as string this module is in conflict with
-		$this->phpmin = array(5, 6); // Minimum version of PHP required by module
+		$this->phpmin = array(7, 0); // Minimum version of PHP required by module
 		$this->langfiles = array("loan");
 
 		// Constants
@@ -82,7 +79,7 @@ class modLoan extends DolibarrModules
 				"chaine",
 				"6611"
 		);
-		$this->const[1] = array(
+		$this->const[2] = array(
 				"LOAN_ACCOUNTING_ACCOUNT_INSURANCE",
 				"chaine",
 				"6162"
@@ -158,7 +155,10 @@ class modLoan extends DolibarrModules
 	 */
 	public function init($options = '')
 	{
-		global $conf;
+		$result = $this->_load_tables('/install/mysql/', 'loan');
+		if ($result < 0) {
+			return -1; // Do not activate module if error 'not allowed' returned when loading module SQL queries (the _load_table run sql with run_sql with the error allowed parameter set to 'default')
+		}
 
 		// Clean before activation
 		$this->remove($options);
