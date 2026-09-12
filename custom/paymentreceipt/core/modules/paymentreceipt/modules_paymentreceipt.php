@@ -44,7 +44,7 @@ class ModelePayment_receipt extends CommonDocGenerator
 	 *  Return list of active generation modules
 	 * 	@param		$db		Database handler
 	 */
-	function liste_modeles($db)
+	static function liste_modeles($db)
 	{
 		global $conf;
 

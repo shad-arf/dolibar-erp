@@ -92,7 +92,7 @@ class modpaymentreceipt extends DolibarrModules
 
         // Additionnals paymentreceipt tabs in other modules
         $this->tabs = array(
-				'payment:+paymentreceipt:paymentreceipt:paymentreceipt@paymentreceipt:/paymentreceipt/tabs/paymentreceipt.php?id=__ID__'
+				'payment:+paymentreceipt:paymentreceipt:paymentreceipt@paymentreceipt:$user->rights->paymentreceipt->lire:/paymentreceipt/tabs/paymentreceipt.php?id=__ID__'
 			);
 
 	}
