@@ -48,7 +48,7 @@ class pdf_orge extends CommonDocGenerator {
      * 		@param		db		Database access handler
      */
 
-    function pdf_orge($db) {
+    function __construct($db) {
         global $conf, $langs, $mysoc;
 
         $this->db = $db;

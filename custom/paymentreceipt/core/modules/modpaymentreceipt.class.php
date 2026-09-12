@@ -38,7 +38,7 @@ class modpaymentreceipt extends DolibarrModules
 	*
 	*   @param	  DoliDB		$db	  Database handler
 	*/
-	function modpaymentreceipt($db)
+	function __construct($db)
 	{
 		global $conf;
 
