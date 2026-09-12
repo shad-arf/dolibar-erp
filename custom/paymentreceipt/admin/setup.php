@@ -403,7 +403,7 @@ print '</table>';
 <script>
     $(document).ready(function() {
         $('body').append('<div id="params"></div>');
-        $('#params').load('<?php print DOL_URL_ROOT. "/paymentreceipt/paymentreceipt_parametrage_page.php?backlink=/paymentreceipt/admin/setup.php&unhide=1";?>');
+        $('#params').load('<?php print dol_buildpath('/paymentreceipt/paymentreceipt_parametrage_page.php', 1). "?backlink=/paymentreceipt/admin/setup.php&unhide=1";?>');
         $("#params").delegate("form input[type=submit]","click",function(){
             var form = $(this).parents("form");
             var data = form.serialize();
