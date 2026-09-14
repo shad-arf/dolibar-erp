@@ -109,7 +109,7 @@ class pdf_orge extends CommonDocGenerator {
         }
 
         if (file_exists($dir)) {
-            $nblignes = sizeof($object->lines);
+            $nblignes = sizeof((array) $object->lines);
 
             $pdf = pdf_getInstance($this->format, 'mm', 'l');
 
